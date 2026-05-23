@@ -1,0 +1,17 @@
+# https://dart.dev/guides/libraries/private-files
+# Created by `dart pub`
+.dart_tool/
+
+# Avoid committing pubspec.lock for library packages; see
+# https://dart.dev/guides/libraries/private-files#pubspeclock.
+pubspec.lock
+
+# Local-dev path overrides — never published, never tracked.
+pubspec_overrides.yaml
+
+# Build / coverage outputs
+build/
+coverage/
+coverage_final/
+coverage_single/
+.DS_Store
