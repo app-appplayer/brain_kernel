@@ -4,6 +4,16 @@
 /// Headless — no UI dependency. Products (builder, industrial, medical,
 /// education, B2B, personal) wire kernel pieces together with their own
 /// UI and domain workflow. See `docs/00_PRD/PRD.md` for the manifesto.
+///
+/// **Library dependency policy** — the kernel itself does NOT depend on
+/// `package:mcp_server` / `package:mcp_client` at the type level. It
+/// describes tool calls and resource reads through the
+/// [KernelServerHost] / [KernelClientHost] envelope (in
+/// `lib/src/system/host/`). Hosts that want a `mcp_server` / `mcp_client`
+/// backed surface import the reference impls via
+/// `package:brain_kernel/mcp_host.dart`. Hosts that drive a custom
+/// transport (USB, IPC, in-memory bus) implement the abstracts directly
+/// without adding mcp_server / mcp_client to their pubspec.
 library;
 
 // CORE — project / canonical / patch / validate / build framework.
@@ -34,7 +44,8 @@ export 'src/feat/extractor/asset_extractor.dart';
 export 'src/feat/asset_touch_observer.dart';
 
 // INFRA — bundle helpers / embedding / knowledge registry / FlowBrain
-// wiring / MCP server.
+// wiring. Server / transport / dispatch surfaces live in `src/system/host/`
+// as library-agnostic abstracts (see policy note at the top).
 export 'src/infra/converter.dart';
 export 'src/infra/bundle/bundle_reader.dart';
 export 'src/infra/bundle/knowledge_writer.dart';
@@ -51,11 +62,49 @@ export 'src/infra/flowbrain/llm_port_adapter.dart';
 export 'src/infra/flowbrain/flow_definition_workflow.dart';
 export 'src/infra/server/tool_scope.dart';
 export 'src/infra/server/transport_picker.dart';
-export 'src/infra/server/server_bootstrap.dart';
 // Bundle activation standard (knowledge-operations) — hosts, built-in
 // bundles, external bundles, and AppPlayer bundle apps all register
 // their assets through the same canonical path.
 export 'src/system/bundle_activation.dart';
+
+// KernelApp — single boot entry point for any FlowBrain app. Owns
+// the shared resources (KnowledgeSystem · LLM pool · activation
+// registry · BM25 query engine · active context) plus the four
+// host-supplied ports. Endpoints (per-domain tool surface + transport)
+// attach through `addEndpoint`. The four ports keep the kernel
+// host-neutral; `Null*` defaults let hosts opt out of any port they
+// do not need (e.g. AppPlayer in-process runs with every port at its
+// `Null*` default).
+export 'src/system/kernel_app.dart';
+export 'src/system/kernel_endpoint.dart';
+export 'src/system/ports/config_port.dart';
+export 'src/system/ports/ui_resource_port.dart';
+export 'src/system/ports/observability_port.dart';
+export 'src/system/ports/bundle_source_port.dart';
+export 'src/system/standard_tools/standard_tools.dart';
+
+// Host abstracts + envelope types — library-agnostic surface the
+// kernel speaks. `KernelServerHost` / `KernelClientHost` are the
+// abstracts hosts implement; `KernelToolResult` / `KernelContent` /
+// `KernelToolHandler` etc. are the envelope types every tool surface
+// goes through. Reference impl on top of `mcp_server` / `mcp_client`
+// lives in `package:brain_kernel/mcp_host.dart`.
+export 'src/system/host/kernel_envelope.dart';
+export 'src/system/host/kernel_server_host.dart';
+export 'src/system/host/kernel_client_host.dart';
+export 'src/system/host/in_process_server_host.dart';
+export 'src/system/host/host_tool_registry.dart';
+export 'src/system/host/mcp_server_spec.dart';
+
+// UI ↔ kernel standard wiring layer. Session lifecycle · Zone-scoped
+// dispatch · 4 standard channel APIs (callTool · readResource · listResources
+// · attach) · `kb://<facade>/<id>` URI scheme. Hosts (vibe_studio ·
+// AppPlayer · user host) consume it through the same import.
+export 'src/system/bridge/bundle_session_bridge.dart';
+export 'src/system/bridge/dispatch_context.dart';
+export 'src/system/bridge/dispatch_session.dart';
+export 'src/system/bridge/resource_uri.dart';
+export 'src/system/bridge/session_registry.dart';
 
 // Chat / LLM — agent-scoped (Phase 2d). Each FlowBrain agent owns its
 // own LLM context (system prompt, history, tool surface, model,
@@ -77,32 +126,20 @@ export 'src/infra/chat/system_prompt_composer.dart';
 export 'package:flowbrain_core/flowbrain_core.dart'
     hide LlmRequest, LlmResponse, LlmMessage, LlmTool, LlmToolCall;
 
-// MCP packages — re-exported so domain hosts (vibe_app_builder /
-// vibe_knowledge_builder / future studios) consume the kernel as the
-// single MCP surface. Domains do NOT add `mcp_bundle` / `mcp_server` /
-// `mcp_llm` to their pubspec — kernel owns the version pin and
-// surfaces the types.
+// `mcp_bundle` — bundle schema + LlmPort + 50+ ports. The kernel is
+// the single MCP surface for domain hosts; they do not add
+// `mcp_bundle` to their pubspec.
 //
-// `mcp_client` is exported via a `show` list (selective) because its
-// model classes (Content / AudioContent / TextContent / TransportConfig
-// / etc.) collide pervasively with `mcp_server`'s. Domain code rarely
-// needs the full client API — typical use = creating an outbound
-// `Client` with one of the standard transports. New types are added to
-// the show list on demand.
-//
-// Conflict policy among the re-exported three:
+// Conflict policy among the re-exported packages:
 //   * kernel's own [ValidationIssue] (asset_validator.dart) stays
 //     primary → mcp_bundle's [ValidationIssue] / [ValidationError] /
 //     [ValidationWarning] / [ValidationSeverity] hidden
 //   * `SkillConfig` / `SkillManifest` / `AuthConfig` /
 //     `EvaluationException` / `EvaluationContext` / `LlmMessage` /
 //     `TransportType` / `ResourceContent` — kernel's downstream
-//     surfaces (flowbrain_core / mcp_server) own these; mcp_bundle's
-//     versions are hidden
+//     surfaces (flowbrain_core) own these; mcp_bundle's hidden
 //   * `LlmMessage` / `LoggerExtensions` — flowbrain_core (via
 //     mcp_bundle) wins; mcp_llm's hidden
-//   * `AuthResult` / `TokenValidator` / `ApiKeyValidator` —
-//     mcp_server's wins; mcp_llm's hidden (LLM auth is internal)
 //   * `LlmPortAdapter` — kernel's flowbrain adapter wins; mcp_llm's
 //     internal adapter hidden
 export 'package:mcp_bundle/mcp_bundle.dart'
@@ -123,30 +160,26 @@ export 'package:mcp_bundle/mcp_bundle.dart'
         LlmToolCall,
         TransportType,
         ResourceContent;
-export 'package:mcp_server/mcp_server.dart';
-export 'package:mcp_client/mcp_client.dart'
-    show
-        Client,
-        StdioClientTransport,
-        SseClientTransport,
-        StreamableHttpClientTransport;
-// `mcp_llm` is exported selectively (show list) instead of with a hide
-// list because its `mcp_server` adapter re-exports many server-side
-// names (CallToolResult / ReadResourceResult / ToolHandler / ...) that
-// collide pervasively with our `mcp_server` re-export. The `show` set
+// `mcp_llm` is exported selectively (show list) so its server-side
+// adapter re-exports (CallToolResult / ReadResourceResult / ToolHandler
+// / ...) don't leak collisions into domain code. The `show` set
 // captures the LLM types domain hosts actually consume; new types are
 // added here on demand.
 export 'package:mcp_llm/mcp_llm.dart'
     show
         LlmClient,
         LlmConfiguration,
+        LlmProvider,
         LlmProviderFactory,
         McpLlm,
         ChatSession,
         ClaudeProvider,
+        CustomLlmProvider,
+        CustomLlmProviderFactory,
         LlmRequest,
         LlmResponse,
         LlmTool,
         LlmToolCall,
         LLmContent,
-        LlmMessage;
+        LlmMessage,
+        ProviderOptions;

@@ -109,11 +109,57 @@ class FlowDefinitionWorkflow
     final stageResults = <fb.StageResult>[];
     final startedAt = DateTime.now();
 
-    for (final step in definition.steps) {
+    // Build id → step lookup once. When any step declares `next[]` the
+    // workflow is treated as a graph; otherwise we fall back to the
+    // linear array order (legacy / sequential authors). Both paths
+    // share the same per-step dispatch + onError branch below.
+    final byId = <String, mb.FlowStep>{
+      for (final s in definition.steps) s.id: s,
+    };
+    final hasGraph =
+        definition.steps.any((s) => s.next.isNotEmpty);
+
+    // Build the execution order. For linear flows we keep insertion
+    // order; for graph flows we BFS from the first step, following
+    // `step.next[]` edges. Visited set prevents cycles. `onError`
+    // targets are also followed when they aren't an empty string.
+    final order = <mb.FlowStep>[];
+    final visited = <String>{};
+    void linearize() {
+      for (final s in definition.steps) {
+        if (visited.add(s.id)) order.add(s);
+      }
+    }
+    if (!hasGraph) {
+      linearize();
+    } else {
+      final queue = <String>[
+        if (definition.steps.isNotEmpty) definition.steps.first.id,
+      ];
+      while (queue.isNotEmpty) {
+        final id = queue.removeAt(0);
+        if (!visited.add(id)) continue;
+        final s = byId[id];
+        if (s == null) continue;
+        order.add(s);
+        for (final nextId in s.next) {
+          if (!visited.contains(nextId)) queue.add(nextId);
+        }
+        if (s.onError != null &&
+            s.onError!.isNotEmpty &&
+            !visited.contains(s.onError!)) {
+          queue.add(s.onError!);
+        }
+      }
+      // Append any unreachable-from-entry steps in declaration order
+      // so authoring sloppiness (disconnected island steps) still
+      // executes — matches the linear flow's permissive contract.
+      linearize();
+    }
+
+    for (final step in order) {
       final stageStart = DateTime.now();
 
-      // condition: simple expressions only (`key`, `key == value`).
-      // Complex expressions await an ExpressionEvaluator.
       if (step.condition != null &&
           step.condition!.isNotEmpty &&
           !_evalCondition(step.condition!, state)) {
@@ -409,12 +455,26 @@ class FlowDefinitionWorkflow
   }
 
   bool _evalCondition(String expr, Map<String, dynamic> state) {
-    final trimmed = expr.trim();
+    var trimmed = expr.trim();
     if (trimmed.isEmpty) return true;
+
+    // Strip a single outer paren pair when it wraps the whole
+    // expression (`(a || b) && c` retains its outer scope; `(a || b)`
+    // recurses on the inner only). Repeats so `(((x)))` reduces step-
+    // wise — each pass peels one matched pair.
+    while (trimmed.length >= 2 &&
+        trimmed.startsWith('(') &&
+        trimmed.endsWith(')') &&
+        _parensWrapWholeExpr(trimmed)) {
+      trimmed = trimmed.substring(1, trimmed.length - 1).trim();
+      if (trimmed.isEmpty) return true;
+    }
 
     // Boolean combinators (left-to-right, lowest precedence first).
     // Sub-expressions recurse back into `_evalCondition` —
-    // `||` / `&&` / comparators / truthy in that order.
+    // `||` / `&&` / comparators / truthy in that order. `_splitTop`
+    // skips matches inside parentheses so `(a || b) && c` splits
+    // correctly on the top-level `&&`.
     final orParts = _splitTop(trimmed, '||');
     if (orParts.length > 1) {
       return orParts.any((p) => _evalCondition(p, state));
@@ -458,15 +518,27 @@ class FlowDefinitionWorkflow
         (v is Map && v.isNotEmpty);
   }
 
-  /// Split `expr` by `op` at the top level. The simple parser does
-  /// not yet support parentheses so this returns a single-element
-  /// list when `op` is absent.
+  /// Split `expr` by `op` at the top level — matches inside parentheses
+  /// are skipped so `(a || b) && c` splits cleanly on the outer `&&`.
+  /// Returns a single-element list when `op` is absent at the top level.
   List<String> _splitTop(String expr, String op) {
     final out = <String>[];
     var start = 0;
+    var depth = 0;
     var i = 0;
     while (i <= expr.length - op.length) {
-      if (expr.substring(i, i + op.length) == op) {
+      final ch = expr[i];
+      if (ch == '(') {
+        depth++;
+        i++;
+        continue;
+      }
+      if (ch == ')') {
+        if (depth > 0) depth--;
+        i++;
+        continue;
+      }
+      if (depth == 0 && expr.substring(i, i + op.length) == op) {
         out.add(expr.substring(start, i).trim());
         start = i + op.length;
         i = start;
@@ -476,6 +548,24 @@ class FlowDefinitionWorkflow
     }
     out.add(expr.substring(start).trim());
     return out;
+  }
+
+  /// True when the outer `(` at position 0 is closed only by the
+  /// final `)` — i.e. the whole expression sits inside one matched
+  /// paren pair. `(a) && (b)` returns false because the first `(`
+  /// closes mid-expression.
+  bool _parensWrapWholeExpr(String expr) {
+    if (expr.isEmpty || expr[0] != '(') return false;
+    var depth = 0;
+    for (var i = 0; i < expr.length; i++) {
+      final ch = expr[i];
+      if (ch == '(') depth++;
+      else if (ch == ')') {
+        depth--;
+        if (depth == 0 && i != expr.length - 1) return false;
+      }
+    }
+    return depth == 0;
   }
 
   dynamic _resolveValue(String token, Map<String, dynamic> state) {

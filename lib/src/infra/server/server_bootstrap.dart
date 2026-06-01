@@ -1,10 +1,17 @@
-/// MCP server bootstrap for knowledge_builder (MOD-INFRA-001 / DDD-20).
+/// MCP server bootstrap (MOD-INFRA-001 / DDD-20).
 ///
-/// Wires `mcp.Server` lifecycle and registers the eight first-cut
-/// `kb_*` tools — kb_status / kb_open_project / kb_save / kb_list_assets
-/// / kb_get_asset / kb_query / kb_validate / kb_build. Asset proposal /
-/// approval (`kb_add_*`, `kb_propose_*`, `kb_approve`, `kb_reject`) plus
-/// the runtime probe wiring land in later rounds.
+/// `ServerBootstrap` is the reference [KernelServerHost] impl on top of
+/// `package:mcp_server`. The kernel core never imports it directly —
+/// hosts that want an MCP transport surface (vibe_studio's per-domain
+/// endpoints, knowledge_builder, headless CLIs) supply
+/// `ServerBootstrap.new` as `KernelApp.boot`'s `serverHostFactory` (or
+/// import it via `package:brain_kernel/mcp_host.dart` and instantiate
+/// directly).
+///
+/// The class translates between the kernel envelope types
+/// ([KernelToolHandler] / [KernelToolResult] / [KernelResourceHandler])
+/// and `mcp.Server`'s wire shape so the kernel core stays library-
+/// agnostic.
 library;
 
 import 'package:mcp_server/mcp_server.dart' as mcp;
@@ -15,10 +22,13 @@ import '../../core/patch_pipeline.dart';
 import '../../core/undo_redo_stack.dart';
 import '../../feat/extractor/asset_extractor.dart';
 import '../../feat/extractor/reviewer_queue.dart';
+import '../../system/host/kernel_envelope.dart';
+import '../../system/host/kernel_server_host.dart';
+import '../../system/host/mcp_server_spec.dart';
 import 'tool_scope.dart';
 import 'transport_picker.dart';
 
-class ServerBootstrap {
+class ServerBootstrap implements KernelServerHost {
   ServerBootstrap({
     this.name = 'knowledge_builder',
     this.version = '0.1.0',
@@ -39,57 +49,84 @@ class ServerBootstrap {
             tools: mcp.ToolsCapability(listChanged: true),
             resources:
                 mcp.ResourcesCapability(subscribe: false, listChanged: true),
-            // Prompts capability advertises the onboarding workflow
-            // surface so external LLMs can discover canonical
-            // bootstrap / wiring / install recipes via prompts/list +
-            // prompts/get. Hosts (vibe_studio) register the actual
-            // prompt bodies after boot.
             prompts: mcp.PromptsCapability(listChanged: false),
           ),
         ) {
     _setProject(project);
   }
 
-  /// Scopes the host accepts at this launch. Defaults to `{external}` —
-  /// the production setup. Hosts running a dev / debug session pass
-  /// `{external}` plus `debugMode: true` to flip in `debug`-scoped
-  /// tools, or pass `{external, internal}` if internal helpers should
-  /// also be reachable on the local transport (rare).
+  /// [KernelServerHostFactory]-shaped entry point. Hosts pass this to
+  /// `KernelApp.boot(serverHostFactory: ServerBootstrap.factory)` so
+  /// every endpoint binds an MCP-server-backed surface.
+  static ServerBootstrap factory({
+    required String name,
+    required String version,
+    Set<ToolScope> visibility = const {ToolScope.external},
+    bool debugMode = false,
+  }) {
+    return ServerBootstrap(
+      name: name,
+      version: version,
+      visibility: visibility,
+      debugMode: debugMode,
+    );
+  }
+
   final Set<ToolScope> _visibility;
   final bool _debugMode;
 
-  /// Tool name → declared scope. Preserved even when a tool is filtered
-  /// out at register time so introspection tools (and tests) can ask
-  /// which scope a name belongs to.
   final Map<String, ToolScope> _scopes = <String, ToolScope>{};
+  final Map<String, KernelToolDef> _toolDefs = <String, KernelToolDef>{};
+  final Map<String, KernelToolHandler> _kernelHandlers =
+      <String, KernelToolHandler>{};
+  final Map<String, KernelPromptDef> _promptDefs = <String, KernelPromptDef>{};
+  final Set<String> _resourceUris = <String>{};
 
-  /// Tool name → full definition (description + inputSchema + scope).
-  /// Drives the meta tools (`kb_list_tools` / `kb_describe_tool`) so
-  /// internal LLMs (FlowBrain agents) and Builder UX surfaces share the
-  /// same catalog as external MCP clients — Extension API v1
-  /// contribution point.
-  final Map<String, _ToolDef> _toolDefs = <String, _ToolDef>{};
-
-  /// Read-only view of registered tool scopes.
+  @override
   Map<String, ToolScope> get toolScopes => Map.unmodifiable(_scopes);
 
-  /// Read-only catalog of registered tools as JSON-serializable
-  /// definitions — `[{name, description, inputSchema, scope}]`. Used
-  /// by `BuilderToolRegistry` / Debug panel to render the full surface
-  /// in-process. Includes tools whose scope is currently filtered out
-  /// of the transport — UI / internal LLM may still surface them.
-  List<Map<String, dynamic>> get toolDefinitions {
-    return <Map<String, dynamic>>[
-      for (final def in _toolDefs.values) def.toJson(),
-    ];
+  @override
+  List<KernelToolDef> get toolDefinitions =>
+      List<KernelToolDef>.unmodifiable(_toolDefs.values);
+
+  /// Populated by `startStreamableHttp` / `startSse` so consumers
+  /// (Claude Code recipe, sibling hosts) can dial the live URL. Stdio
+  /// transports require the host to call [setExternalStdioSpec]
+  /// because the consumer needs the host's launch command / args.
+  /// Cleared on [shutdown].
+  McpServerSpec? _externalSpec;
+
+  @override
+  McpServerSpec? get externalSpec => _externalSpec;
+
+  /// Publish a stdio dial-back spec. Hosts that ship the kernel as a
+  /// child process (Claude Code calling vibe_studio's stdio MCP
+  /// surface) call this so [externalSpec] surfaces the launch command
+  /// / args / env consumers need.
+  void setExternalStdioSpec({
+    required String command,
+    List<String> args = const <String>[],
+    Map<String, String> env = const <String, String>{},
+  }) {
+    _externalSpec = McpServerSpec(
+      name: name,
+      transport: McpServerTransport.stdio,
+      command: command,
+      args: args,
+      env: env,
+    );
   }
 
-  /// Active visibility set (host-supplied + debug toggle).
+  @override
   Set<ToolScope> get activeVisibility => Set.unmodifiable(_visibility);
 
+  @override
   bool get debugMode => _debugMode;
 
+  @override
   final String name;
+
+  @override
   final String version;
 
   /// Active project. Tools that mutate canonical state require it; pure
@@ -108,10 +145,6 @@ class ServerBootstrap {
   Project? get project => _project;
   set project(Project? p) => _setProject(p);
 
-  /// Test-visible accessors so handler tests can inspect queue state
-  /// without going through MCP transport. Hosts (vibe_knowledge_builder
-  /// shell) read [pipeline.undoStack.changes] for ⌘Z / ⇧⌘Z button state
-  /// and call [pipeline.undo] / [pipeline.redo] for keyboard shortcuts.
   ReviewerQueue? get queue => _queue;
   PatchPipeline? get pipeline => _pipeline;
 
@@ -130,42 +163,36 @@ class ServerBootstrap {
         : ReviewerQueue(pipeline: _pipeline!);
   }
 
+  /// Underlying mcp_server instance. Reference-impl detail — hosts that
+  /// need to drive the raw server (e.g. attaching prompt handlers
+  /// directly) reach in here. Code outside the mcp_host adapter should
+  /// prefer the [KernelServerHost] surface.
   final mcp.Server server;
   mcp.ServerTransport? _transport;
   bool _registered = false;
 
-  /// Ring buffer of recent (up to [_dispatchLogLimit]) tool calls.
-  /// Captured by the wrapper installed in [_addTool] — every handler
-  /// invocation lands here regardless of who registered the tool, so
-  /// `studio.debug.dispatch_log` can surface what an external LLM
-  /// agent actually called without instrumenting each handler.
   final List<Map<String, Object?>> _dispatchLog = <Map<String, Object?>>[];
   static const int _dispatchLogLimit = 200;
 
-  /// Read-only snapshot of the most recent tool dispatches.
+  @override
   List<Map<String, Object?>> get dispatchLog =>
       List<Map<String, Object?>>.unmodifiable(_dispatchLog);
 
-  /// Wrapper over `server.addTool` that records the tool's [scope] and
-  /// only forwards to the underlying mcp.Server when the scope falls
-  /// into the active [_visibility] set. Tools outside the visibility
-  /// are still tracked in [_scopes] for introspection but never reach
-  /// any transport — the surface stays minimal for the launch profile
-  /// the host chose.
   void _addTool({
     required String name,
     required String description,
     required Map<String, dynamic> inputSchema,
-    required mcp.ToolHandler handler,
+    required KernelToolHandler handler,
     ToolScope scope = ToolScope.external,
   }) {
     _scopes[name] = scope;
-    _toolDefs[name] = _ToolDef(
+    _toolDefs[name] = KernelToolDef(
       name: name,
       description: description,
       inputSchema: inputSchema,
       scope: scope,
     );
+    _kernelHandlers[name] = handler;
     if (!_visibility.contains(scope)) return;
     server.addTool(
       name: name,
@@ -175,26 +202,22 @@ class ServerBootstrap {
     );
   }
 
-  /// Run [handler] with [args] and record the call + outcome into
-  /// [_dispatchLog]. Captures duration, error flag, and a short
-  /// preview of args / result text. The buffer is capped at
-  /// [_dispatchLogLimit] entries (oldest dropped on overflow).
   Future<mcp.CallToolResult> _dispatchWithLog(
     String name,
     Map<String, dynamic> args,
-    mcp.ToolHandler handler,
+    KernelToolHandler handler,
   ) async {
     final start = DateTime.now();
     final sw = Stopwatch()..start();
     bool isError = false;
     String? resultPreview;
-    mcp.CallToolResult result;
+    KernelToolResult kernelResult;
     try {
-      result = await handler(args);
-      isError = result.isError ?? false;
-      if (result.content.isNotEmpty) {
-        final c = result.content.first;
-        if (c is mcp.TextContent) {
+      kernelResult = await handler(args);
+      isError = kernelResult.isError ?? false;
+      if (kernelResult.content.isNotEmpty) {
+        final c = kernelResult.content.first;
+        if (c is KernelTextContent) {
           final t = c.text;
           resultPreview = t.length > 240 ? '${t.substring(0, 240)}…' : t;
         }
@@ -220,7 +243,7 @@ class ServerBootstrap {
       'args': args,
       if (resultPreview != null) 'resultPreview': resultPreview,
     });
-    return result;
+    return _toMcpToolResult(kernelResult);
   }
 
   void _appendDispatchLog(Map<String, Object?> entry) {
@@ -231,26 +254,19 @@ class ServerBootstrap {
   }
 
   /// Idempotent tool registration. Call once before connecting a
-  /// transport. Kernel itself ships zero tools — hosts wire their own
-  /// surface through [addTool] (base register*Tools / domain bundle
-  /// activation paths). Kept for backwards compat with hosts that
-  /// already call `boot..register()`.
+  /// transport.
+  @override
   void register() {
     if (_registered) return;
     _registered = true;
   }
 
-  /// Public entry-point for hosts that ship their own MCP tools (vibe's
-  /// runtime errors / layout snapshot, kb_flutter's UI hooks, etc.).
-  /// Tools registered through this path go through the same scope
-  /// filter as the kernel's built-ins — pass `scope: ToolScope.debug`
-  /// for tools that should only surface when the host launches with
-  /// `debugMode: true`. FR-SRV-007.
+  @override
   void addTool({
     required String name,
     required String description,
     required Map<String, dynamic> inputSchema,
-    required mcp.ToolHandler handler,
+    required KernelToolHandler handler,
     ToolScope scope = ToolScope.external,
   }) {
     _addTool(
@@ -262,20 +278,109 @@ class ServerBootstrap {
     );
   }
 
-  /// Remove a tool previously registered via [addTool]. Used by the
-  /// universal-host activation lifecycle — when a domain bundle's tab
-  /// closes, the host calls [removeTool] for every prefixed tool the
-  /// bundle declared, so the next `tools/list` no longer surfaces
-  /// orphan entries pointing at a torn-down dispatch path.
-  ///
-  /// Returns true when an entry was removed, false when no tool with
-  /// that name was tracked. Idempotent — calling twice is safe.
+  @override
   bool removeTool(String name) {
     final hadDef = _toolDefs.remove(name) != null;
     final hadScope = _scopes.remove(name) != null;
+    _kernelHandlers.remove(name);
     if (!hadDef && !hadScope) return false;
     server.removeTool(name);
     return true;
+  }
+
+  @override
+  void addResource({
+    required String uri,
+    required String name,
+    required String description,
+    required String mimeType,
+    required KernelResourceHandler handler,
+  }) {
+    server.addResource(
+      uri: uri,
+      name: name,
+      description: description,
+      mimeType: mimeType,
+      handler: (u, params) async {
+        final result = await handler(u, params);
+        return _toMcpReadResourceResult(result);
+      },
+    );
+    _resourceUris.add(uri);
+  }
+
+  @override
+  List<String> get resourceUris => List<String>.unmodifiable(_resourceUris);
+
+  @override
+  bool removeResource(String uri) {
+    try {
+      server.removeResource(uri);
+      _resourceUris.remove(uri);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  void addPrompt({
+    required String name,
+    required String description,
+    required List<KernelPromptArgument> arguments,
+    required KernelPromptHandler handler,
+  }) {
+    _promptDefs[name] = KernelPromptDef(
+      name: name,
+      description: description,
+      arguments: List<KernelPromptArgument>.unmodifiable(arguments),
+    );
+    server.addPrompt(
+      name: name,
+      description: description,
+      arguments: <mcp.PromptArgument>[
+        for (final a in arguments)
+          mcp.PromptArgument(
+            name: a.name,
+            description: a.description ?? '',
+            required: a.required,
+          ),
+      ],
+      handler: (Map<String, dynamic> args) async {
+        final result = await handler(args);
+        return _toMcpGetPromptResult(result);
+      },
+    );
+  }
+
+  @override
+  bool removePrompt(String name) {
+    final removed = _promptDefs.remove(name) != null;
+    try {
+      server.removePrompt(name);
+    } catch (_) {/* ignore — mcp_server raises when name is absent */}
+    return removed;
+  }
+
+  @override
+  List<KernelPromptDef> get promptDefinitions =>
+      List<KernelPromptDef>.unmodifiable(_promptDefs.values);
+
+  @override
+  Future<KernelToolResult> callTool(
+    String name,
+    Map<String, dynamic> args,
+  ) async {
+    final handler = _kernelHandlers[name];
+    if (handler == null) {
+      return KernelToolResult(
+        isError: true,
+        content: <KernelContent>[
+          KernelTextContent(text: 'Tool not registered: $name'),
+        ],
+      );
+    }
+    return handler(args);
   }
 
   // ── Transport lifecycle ────────────────────────────────────────
@@ -291,33 +396,75 @@ class ServerBootstrap {
   Future<void> startStreamableHttp({
     String host = '127.0.0.1',
     int port = 7820,
+    String endpoint = '/mcp',
   }) async {
     register();
-    final t = mcp.StreamableHttpServerTransport(
-      config: mcp.StreamableHttpServerConfig(host: host, port: port),
+    // Single source of truth — the config carries host/port/endpoint
+    // and both the transport (which listens) and the spec (which the
+    // recipe surfaces to consumers like Claude Code's --mcp-config)
+    // read the path off the same object. Hosts that need a custom
+    // path (e.g. `/api/mcp`, `/v2/mcp`) override [endpoint] here.
+    final config = mcp.StreamableHttpServerConfig(
+      host: host,
+      port: port,
+      endpoint: endpoint,
     );
+    final t = mcp.StreamableHttpServerTransport(config: config);
     await t.start();
     _transport = t;
     server.connect(t);
+    _externalSpec = McpServerSpec(
+      name: name,
+      transport: McpServerTransport.http,
+      url: 'http://${config.host}:${config.port}${config.endpoint}',
+    );
   }
 
   Future<void> startSse({
     String host = '127.0.0.1',
     int port = 7821,
+    String endpoint = '/sse',
+    String messagesEndpoint = '/message',
   }) async {
     register();
     final t = mcp.SseServerTransport(
-      endpoint: '/sse',
-      messagesEndpoint: '/message',
+      endpoint: endpoint,
+      messagesEndpoint: messagesEndpoint,
       host: host,
       port: port,
     );
     _transport = t;
     server.connect(t);
+    _externalSpec = McpServerSpec(
+      name: name,
+      transport: McpServerTransport.sse,
+      url: 'http://$host:$port$endpoint',
+    );
   }
 
   /// Dispatch the chosen [transport] to the matching `startX` method.
+  @override
   Future<void> start(
+    KernelTransportKind transport, {
+    String host = '127.0.0.1',
+    int port = 7820,
+  }) {
+    switch (transport) {
+      case KernelTransportKind.inProcess:
+        register();
+        return Future.value();
+      case KernelTransportKind.stdio:
+        return startStdio();
+      case KernelTransportKind.streamableHttp:
+        return startStreamableHttp(host: host, port: port);
+      case KernelTransportKind.sse:
+        return startSse(host: host, port: port);
+    }
+  }
+
+  /// Legacy entry point — accepts the `infra/server` [TransportType]
+  /// enum used by older callers (`transport_picker.pickTransport`).
+  Future<void> startTransport(
     TransportType transport, {
     String host = '127.0.0.1',
     int port = 7820,
@@ -332,30 +479,53 @@ class ServerBootstrap {
     }
   }
 
+  @override
   Future<void> shutdown() async {
     final t = _transport;
     if (t != null) t.close();
     _transport = null;
+    _externalSpec = null;
   }
 }
 
-class _ToolDef {
-  const _ToolDef({
-    required this.name,
-    required this.description,
-    required this.inputSchema,
-    required this.scope,
-  });
+mcp.CallToolResult _toMcpToolResult(KernelToolResult r) {
+  return mcp.CallToolResult(
+    content: <mcp.Content>[
+      for (final c in r.content) _toMcpContent(c),
+    ],
+    isError: r.isError,
+  );
+}
 
-  final String name;
-  final String description;
-  final Map<String, dynamic> inputSchema;
-  final ToolScope scope;
+mcp.GetPromptResult _toMcpGetPromptResult(KernelGetPromptResult r) {
+  return mcp.GetPromptResult(
+    description: r.description ?? '',
+    messages: <mcp.Message>[
+      for (final m in r.messages)
+        mcp.Message(role: m.role, content: _toMcpContent(m.content)),
+    ],
+  );
+}
 
-  Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-        'description': description,
-        'inputSchema': inputSchema,
-        'scope': scope.name,
-      };
+mcp.Content _toMcpContent(KernelContent c) {
+  switch (c) {
+    case KernelTextContent t:
+      return mcp.TextContent(text: t.text);
+    case KernelImageContent i:
+      return mcp.ImageContent(data: i.data, mimeType: i.mimeType);
+  }
+}
+
+mcp.ReadResourceResult _toMcpReadResourceResult(KernelReadResourceResult r) {
+  return mcp.ReadResourceResult(
+    contents: <mcp.ResourceContentInfo>[
+      for (final e in r.contents)
+        mcp.ResourceContentInfo(
+          uri: e.uri,
+          text: e.text,
+          blob: e.blob,
+          mimeType: e.mimeType,
+        ),
+    ],
+  );
 }

@@ -1,4 +1,5 @@
 import 'package:brain_kernel/brain_kernel.dart';
+import 'package:brain_kernel/mcp_host.dart';
 import 'package:test/test.dart';
 
 void main() {

@@ -1,3 +1,24 @@
+## 0.1.1 - 2026-06-01 - Behavior definition engine bridge + MCP serving (additive)
+
+### Added
+- `bk.philosophy.check` standard tool — wraps `PhilosophyFacade.checkProhibitions`, evaluating a proposed `action` / `output` against active ethos and returning `{hasHardViolation, violations}`. The read-side of `bk.philosophy.*` (the existing put/get/activate go to the ethos store); lets a behavior step gate on `hasHardViolation`.
+- `BundleActivation.registerBehavior(BehaviorDefinition)` — maps a bundle's `behavior.definitions[]` entry to an `OpsRuntime.behaviorRegistry` factory. Called automatically inside the `activate` loop when `bundle.behavior` is present; result carries `result.behaviors` count and `registeredBehaviors` list. `ownsBehavior(id)` predicate and teardown unregistration included. The action dispatcher surfaces a step's tool/skill output into run state — a tool's JSON result (or a skill's `Map` result) is merged so a later step's `when` guard can read its keys (e.g. gate on `hasHardViolation` from `bk.philosophy.check`).
+- `bk.behavior.run`, `bk.behavior.resume`, and `bk.behavior.list` standard tools registered in `ops_tools.dart`, under the `bk.behavior.*` namespace alongside `bk.workflow.*` / `bk.pipeline.*` / `bk.runbook.*`. Execution routes through the ops facade (`app.system.ops.runBehavior` / `resumeBehavior` / `listBehaviors`, added in mcp_knowledge 0.2.4) — the same layer the workflow/runbook tools use — so the kernel and tools layer hold no direct `mcp_knowledge_ops` dependency for behavior execution. `bk.behavior.resume` accepts an optional `statePatch` (e.g. `{"approved": true}`) merged into the run state before re-evaluation, so an approval unblocks a waiting guard.
+- `BundleActivation` optional `behaviorStore` field (`StateStore?`) — injected durable store for suspend/resume across restarts; defaults to per-behavior `EphemeralStateStore` when absent.
+- **MCP serving** (`specs/mcp_serving` 1.0) — `KernelEndpoint.activate` exposes the activated bundle as the well-known `bundle://manifest.json` resource (the bundle document: manifest metadata + sections) so a remote AppPlayer-class client can `resources/read` it, reconstruct the `McpBundle`, and run it identically to a local bundle. `KernelServerHost` gains a `resourceUris` introspection getter (parity with `toolDefinitions` / `promptDefinitions`), implemented by `InProcessKernelServerHost` and `ServerBootstrap`.
+- New regression tests included in the system test suite.
+
+### Changed (dependency floors)
+The kernel uses symbols introduced in this round's lower releases, so the constraint floors are raised to **guarantee** them, not merely resolve to them (the prior `^0.2.1`-style floors were satisfiable by versions lacking the symbols):
+- `mcp_bundle` `^0.4.0` → `^0.4.1` — `BehaviorSection` / `BehaviorDefinition` (`bundle.behavior`) consumed by `BundleActivation`.
+- `mcp_knowledge_ops` `^0.2.1` → `^0.2.2` — `BehaviorEngine` / `BehaviorRunnable` / `StateStore` / `OpsRuntime.behaviorRegistry` constructed by `BundleActivation`.
+- `flowbrain_core` `^0.1.2` → `^0.1.3` — its re-exported `OpsFacade` must carry `runBehavior` / `resumeBehavior` / `listBehaviors` (flowbrain_core 0.1.3 raises its own `mcp_knowledge` floor to `^0.2.4`).
+
+### Backward compatibility
+- Fully additive. No existing `BundleActivation`, `KernelApp`, or tool API changed. Hosts that do not set `bundle.behavior` see no behavior change.
+
+---
+
 ## 0.1.0 - 2026-05-23 - Initial release
 
 First public release of `brain_kernel`. Headless system kernel that

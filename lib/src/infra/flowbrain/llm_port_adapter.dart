@@ -1,32 +1,89 @@
 /// MOD-INFRA-007 — LlmPortAdapter.
 ///
-/// Implements `mcp_bundle.LlmPort` on top of `mcp_llm.ClaudeProvider`.
-/// FlowBrain `AgentRuntime` calls `LlmPort.complete(LlmRequest)` when an
-/// agent's `ask` resolves; this adapter converts mcp_bundle's request /
-/// response shape into mcp_llm's and forwards to the underlying
-/// provider with the agent's pinned model.
+/// Implements `mcp_bundle.LlmPort` on top of any `mcp_llm.LlmProvider`
+/// (Anthropic Claude · OpenAI · Gemini · Cohere · Bedrock · Mistral ·
+/// Groq · Vertex AI · custom CLI / local LLM). The adapter converts
+/// mcp_bundle's request / response shape into mcp_llm's and forwards
+/// to the underlying provider with the agent's pinned model.
 ///
-/// Per agent profile uses a different model id (Opus / Sonnet / Haiku),
-/// so vibe boots one adapter instance per model and exposes them through
-/// `InfraPorts.llmProviders` keyed by model id.
+/// Two construction paths:
+///
+/// 1. **Default** — `LlmPortAdapter(modelId, apiKey, endpoint)`. The
+///    adapter creates a `mll.ClaudeProvider` lazily on first call. Same
+///    signature as before — existing callers keep working.
+///
+/// 2. **External** — `LlmPortAdapter.fromInterface(modelId, provider)`.
+///    The host instantiates any `mll.LlmProvider` (via
+///    `McpLlm.registerProvider` + `McpLlm.createProvider`, or directly)
+///    and hands it in. Used for non-Anthropic providers + custom LLM
+///    implementations (CLI process invoke, local Ollama, etc.).
+///
+/// Per agent profile uses a different model id (Opus / Sonnet / Haiku
+/// / gpt-5 / gemini-2.5-pro / ...), so hosts typically register one
+/// adapter instance per (provider × model) pair through
+/// `AgentLlmSessions`.
 library;
 
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:mcp_llm/mcp_llm.dart' as mll;
 
 class LlmPortAdapter extends mb.LlmPort {
+  /// Default ctor — creates a `ClaudeProvider` lazily on first call.
+  /// Keeps the original signature so Anthropic-only callers don't
+  /// change.
   LlmPortAdapter({
     required this.modelId,
     required this.apiKey,
     this.endpoint,
-  });
+    String providerName = 'anthropic',
+  })  : _externalProvider = null,
+        _providerName = providerName;
+
+  /// External-provider ctor — host supplies any `mll.LlmProvider`
+  /// (OpenAI · Gemini · custom CLI · local Ollama · ...). The adapter
+  /// uses [provider] directly and ignores `apiKey` / `endpoint`
+  /// (caller already configured them when constructing [provider]).
+  ///
+  /// [providerName] surfaces the active provider identity on
+  /// [LlmPortAdapter.providerName] so UI host can render the chat
+  /// header banner / footer metadata accurately. Caller-supplied
+  /// (e.g. `'openai'`, `'gemini'`, `'claude_code'`). When omitted the
+  /// adapter labels itself `'external'` — accurate (kernel does not
+  /// invent a provider) but generic; hosts that surface a provider
+  /// banner should always pass the real id so users can see which
+  /// backend their chat is dispatching through.
+  LlmPortAdapter.fromInterface({
+    required this.modelId,
+    required mll.LlmProvider provider,
+    String providerName = 'external',
+  })  : apiKey = '',
+        endpoint = null,
+        _externalProvider = provider,
+        _providerName = providerName;
 
   /// Provider model id — matches `ModelSpec.id` on the agent profile.
   final String modelId;
   final String apiKey;
   final String? endpoint;
 
-  mll.ClaudeProvider? _provider;
+  /// External `LlmProvider` instance handed in via
+  /// [LlmPortAdapter.fromInterface]. When non-null this is the
+  /// adapter's provider and `_lazyClaude` stays null forever.
+  final mll.LlmProvider? _externalProvider;
+
+  final String _providerName;
+
+  /// Active provider identity (`'anthropic'` for the default ctor,
+  /// caller-supplied for [LlmPortAdapter.fromInterface]). UI host
+  /// surfaces this on the chat panel header so the user can see
+  /// which provider the manager / worker is actually dispatching
+  /// through — protects against silent provider fallback the user
+  /// did not opt into.
+  String get providerName => _providerName;
+
+  /// Lazily created `ClaudeProvider` for the default ctor path.
+  /// Stays null when [_externalProvider] is set.
+  mll.LlmProvider? _lazyClaude;
 
   @override
   mb.LlmCapabilities get capabilities => const mb.LlmCapabilities(
@@ -35,8 +92,11 @@ class LlmPortAdapter extends mb.LlmPort {
         toolCalling: true,
       );
 
-  Future<mll.ClaudeProvider> _ensureProvider() async {
-    if (_provider != null) return _provider!;
+  Future<mll.LlmProvider> _ensureProvider() async {
+    final ext = _externalProvider;
+    if (ext != null) return ext;
+    final cached = _lazyClaude;
+    if (cached != null) return cached;
     final config = mll.LlmConfiguration(
       apiKey: apiKey,
       model: modelId,
@@ -49,7 +109,7 @@ class LlmPortAdapter extends mb.LlmPort {
       config: config,
     );
     await p.initialize(config);
-    _provider = p;
+    _lazyClaude = p;
     return p;
   }
 

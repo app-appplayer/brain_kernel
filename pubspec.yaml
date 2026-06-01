@@ -5,7 +5,7 @@ description: >
   RAG over mcp_bundle and flowbrain_core. Products (builder / industrial
   HMI / medical / education / B2B / personal) wire kernel pieces with
   their own UI and domain workflow.
-version: 0.1.0
+version: 0.1.1
 homepage: https://app-appplayer.github.io/makemind
 repository: https://github.com/app-appplayer/brain_kernel
 issue_tracker: https://github.com/app-appplayer/brain_kernel/issues
@@ -26,18 +26,18 @@ dependencies:
   crypto: ^3.0.5
   meta: ^1.15.0
   path: ^1.9.0
-  mcp_bundle: ^0.4.0
+  mcp_bundle: ^0.4.1
   mcp_client: ^2.0.0
   mcp_llm: ^2.1.1
   mcp_server: ^2.0.0
-  flowbrain_core: ^0.1.2
+  flowbrain_core: ^0.1.3
   # FlowDefinitionWorkflow adapter (declarative bundle.flow.flows[]
   # → mcp_knowledge_ops Workflow instance) imports Workflow /
   # WorkflowStage / WorkflowResult / WorkflowMetrics / StageResult
   # directly. flowbrain_core re-exports via mcp_knowledge transitive
   # but Dart needs the package in pubspec to allow `as fb` import
   # of those types in the kernel side adapter.
-  mcp_knowledge_ops: ^0.2.1
+  mcp_knowledge_ops: ^0.2.2
 
 dev_dependencies:
   test: ^1.25.0

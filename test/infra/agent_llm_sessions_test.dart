@@ -19,6 +19,31 @@ void main() {
       expect(pool.providers['anthropic'], same(opus));
     });
 
+    test('addAll merges a map into the pool', () {
+      final pool = AgentLlmSessions();
+      final opus = _adapter('claude-opus-4-7');
+      pool.register('anthropic', opus);
+
+      final additions = <String, LlmPortAdapter>{
+        'openai': _adapter('gpt-5'),
+        'gemini': _adapter('gemini-2.5-pro'),
+      };
+      pool.addAll(additions);
+
+      expect(pool.providers.keys, containsAll(<String>['anthropic', 'openai', 'gemini']));
+      expect(pool.providers['anthropic'], same(opus));
+      expect(pool.providers['openai'], same(additions['openai']));
+    });
+
+    test('addAll replaces existing keys', () {
+      final pool = AgentLlmSessions();
+      final opus = _adapter('claude-opus-4-7');
+      final sonnet = _adapter('claude-sonnet-4-6');
+      pool.register('anthropic', opus);
+      pool.addAll(<String, LlmPortAdapter>{'anthropic': sonnet});
+      expect(pool.providers['anthropic'], same(sonnet));
+    });
+
     test('replace at key invalidates only that slot', () {
       final pool = AgentLlmSessions();
       final opus = _adapter('claude-opus-4-7');

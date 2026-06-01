@@ -28,16 +28,19 @@
 /// Dependencies:
 /// - `KnowledgeSystem` — facade pool (facts / skill / profile /
 ///   philosophy / agents / ethosStore / opsRuntime).
-/// - `ServerBootstrap` — needed when a registered flow's
-///   `toolDispatcher` closure has to call `boot.server.callTool`.
+/// - `KernelServerHost` — needed when a registered flow's
+///   `toolDispatcher` closure has to call `boot.callTool`.
 library;
+
+import 'dart:convert';
 
 import 'package:flowbrain_core/flowbrain_core.dart' as fb;
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:mcp_knowledge_ops/mcp_knowledge_ops.dart' as ops;
 
 import '../infra/flowbrain/flow_definition_workflow.dart';
-import '../infra/server/server_bootstrap.dart';
+import 'host/kernel_envelope.dart';
+import 'host/kernel_server_host.dart';
 
 /// Result of an `activate` call — per-category counts plus per-entry
 /// error messages collected during the run.
@@ -51,10 +54,11 @@ class BundleActivationResult {
   int facts = 0;
   int flows = 0;
   int agents = 0;
+  int behaviors = 0;
   final List<String> errors = <String>[];
 
   int get totalRegistered =>
-      skills + profiles + philosophies + facts + flows + agents;
+      skills + profiles + philosophies + facts + flows + agents + behaviors;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'bundleId': bundleId,
@@ -74,7 +78,14 @@ class BundleActivation {
     required this.system,
     required this.bundleId,
     this.boot,
+    this.behaviorStore,
   });
+
+  /// Optional shared state store for activated behavior definitions. When a
+  /// host injects a durable store (e.g. KV-backed), suspended behavior runs
+  /// survive restarts (the runbook profile). Defaults to a per-behavior
+  /// in-memory store (the ephemeral/flow profile).
+  final ops.StateStore? behaviorStore;
 
   /// Asset registration target — the kernel's KnowledgeSystem.
   final fb.KnowledgeSystem system;
@@ -86,7 +97,7 @@ class BundleActivation {
   /// Used by FlowDefinitionWorkflow closures (`toolDispatcher`,
   /// `skillRunner`, ...). When null, flow registration still works
   /// but action/api steps throw at run time.
-  final ServerBootstrap? boot;
+  final KernelServerHost? boot;
 
   // ── Per-bundle catalog ────────────────────────────────────────
   final List<String> _registeredSkills = <String>[];
@@ -95,6 +106,7 @@ class BundleActivation {
   final List<String> _registeredFacts = <String>[];
   final List<String> _registeredFlows = <String>[];
   final List<String> _registeredAgents = <String>[];
+  final List<String> _registeredBehaviors = <String>[];
 
   List<String> get registeredSkills => List.unmodifiable(_registeredSkills);
   List<String> get registeredProfiles =>
@@ -104,6 +116,8 @@ class BundleActivation {
   List<String> get registeredFacts => List.unmodifiable(_registeredFacts);
   List<String> get registeredFlows => List.unmodifiable(_registeredFlows);
   List<String> get registeredAgents => List.unmodifiable(_registeredAgents);
+  List<String> get registeredBehaviors =>
+      List.unmodifiable(_registeredBehaviors);
 
   // ── Activate ──────────────────────────────────────────────────
 
@@ -167,6 +181,16 @@ class BundleActivation {
         result.errors.add('agent ${ag.id}: $e');
       }
     }
+    for (final def in bundle.behavior?.definitions ??
+        const <mb.BehaviorDefinition>[]) {
+      try {
+        final id = registerBehavior(def);
+        _registeredBehaviors.add(id);
+        result.behaviors++;
+      } catch (e) {
+        result.errors.add('behavior ${def.id}: $e');
+      }
+    }
     return result;
   }
 
@@ -185,6 +209,8 @@ class BundleActivation {
   bool ownsFact(String exposedId) => _registeredFacts.contains(exposedId);
   bool ownsFlow(String exposedId) => _registeredFlows.contains(exposedId);
   bool ownsAgent(String exposedId) => _registeredAgents.contains(exposedId);
+  bool ownsBehavior(String exposedId) =>
+      _registeredBehaviors.contains(exposedId);
 
   // ── Tear-down ─────────────────────────────────────────────────
 
@@ -207,6 +233,9 @@ class BundleActivation {
       for (final id in _registeredFlows) {
         opsRuntime.workflowRegistry.remove(id);
       }
+      for (final id in _registeredBehaviors) {
+        opsRuntime.behaviorRegistry.remove(id);
+      }
     }
     if (_registeredFacts.isNotEmpty) {
       try {
@@ -222,6 +251,7 @@ class BundleActivation {
     _registeredFacts.clear();
     _registeredFlows.clear();
     _registeredAgents.clear();
+    _registeredBehaviors.clear();
   }
 
   // ── Per-category registration (public — host wrappers call these) ─
@@ -367,7 +397,7 @@ class BundleActivation {
           namespacedFlow,
           toolDispatcher: b == null
               ? null
-              : (tool, args) => b.server.callTool(tool, args),
+              : (tool, args) => b.callTool(tool, args),
           skillRunner: (skillId, inputs) async {
             final result = await system.skill.execute(skillId, inputs);
             return result;
@@ -382,6 +412,59 @@ class BundleActivation {
               if (handle.error != null) 'error': handle.error,
             };
           },
+        );
+    return exposedId;
+  }
+
+  /// mb.BehaviorDefinition → unified behavior engine, registered in
+  /// `OpsRuntime.behaviorRegistry`. The bundle's declarative steps map to
+  /// engine steps; the action dispatcher routes `tool` invocations through
+  /// the host endpoint (`boot.callTool`) and `skill` invocations through
+  /// `SkillFacade.execute` — mirroring how flow steps dispatch. Uses an
+  /// ephemeral state store; a durable store is the runbook profile.
+  String registerBehavior(mb.BehaviorDefinition def) {
+    final opsRuntime = system.opsRuntime;
+    if (opsRuntime is! ops.OpsRuntime) {
+      throw StateError('OpsRuntime not configured');
+    }
+    final exposedId = '$bundleId.${def.id}';
+    final steps = def.steps
+        .map((s) => ops.BehaviorStep(
+              id: s.id,
+              action: s.action != null
+                  ? ops.BehaviorAction.fromJson(s.action!)
+                  : null,
+              when: s.when,
+              then: s.then,
+              dependsOn: s.dependsOn,
+              onFailure: s.onFailure,
+            ))
+        .toList();
+    final b = boot;
+    // One shared store per registered behavior so run + resume across
+    // separate tool calls see the same suspended run.
+    final store = behaviorStore ?? ops.EphemeralStateStore();
+    opsRuntime.behaviorRegistry[exposedId] = () => ops.BehaviorRunnable(
+          ops.BehaviorEngine(
+            store: store,
+            dispatch: (action, state) async {
+              if (action.kind == 'skill') {
+                final dynamic r =
+                    await system.skill.execute(action.ref, action.args);
+                // A Map result merges into state so later guards can read its
+                // keys; anything else is parked under `result`.
+                return r is Map
+                    ? Map<String, dynamic>.from(r)
+                    : <String, dynamic>{'result': r};
+              }
+              if (b == null) {
+                throw StateError('tool dispatch not wired (${action.ref})');
+              }
+              final r = await b.callTool(action.ref, action.args);
+              return _behaviorToolOutput(r);
+            },
+          ),
+          steps,
         );
     return exposedId;
   }
@@ -415,6 +498,22 @@ class BundleActivation {
         return fb.AgentRole.worker;
     }
   }
+}
+
+/// Surface a tool result into behavior-engine state: parse the first text
+/// content as JSON and, if it is a map, merge its keys so a later step's
+/// `when` guard can read them (e.g. `hasHardViolation` from
+/// `bk.philosophy.check`). Non-JSON / non-map results park under `result`.
+Map<String, dynamic> _behaviorToolOutput(KernelToolResult r) {
+  for (final c in r.content) {
+    if (c is KernelTextContent) {
+      try {
+        final decoded = jsonDecode(c.text);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {/* not JSON — fall through */}
+    }
+  }
+  return <String, dynamic>{'result': r};
 }
 
 /// Process-singleton multi-instance hub.
