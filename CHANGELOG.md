@@ -1,3 +1,26 @@
+## 0.1.2 - 2026-06-10 - Extension transport seam + clientTools export (additive)
+
+### Added
+- `McpClientKernelHost.connectWith({id, transport})` — new public method on the
+  reference `KernelClientHost` implementation. Accepts a host-supplied
+  `mcp_client.ClientTransport` (e.g. `TcpClientTransport` or
+  `WebSocketClientTransport` from `mcp_bridge`) and opens a
+  `KernelClientConnection` over it. The kernel itself carries no FFI or
+  platform dependency for the transport — the calling host owns those by
+  design (`specs/platform/08-extension.md` §4 injection seam). The abstract
+  `KernelClientHost` is unchanged.
+- `clientTools` function exported from the main barrel
+  (`lib/brain_kernel.dart`). Returns the `bk.mcp.*` in-process tool map so
+  hosts (e.g. `appplayer_core`) can register it alongside `standardTools`
+  without reaching into `src/`.
+
+### Backward compatibility
+- Fully additive. No existing `KernelApp`, `BundleActivation`, `standardTools`,
+  or host-abstract surface changed. Hosts that do not use extension transports
+  see no behavior change.
+
+---
+
 ## 0.1.1 - 2026-06-01 - Behavior definition engine bridge + MCP serving (additive)
 
 ### Added

@@ -94,6 +94,7 @@ export 'src/system/host/kernel_server_host.dart';
 export 'src/system/host/kernel_client_host.dart';
 export 'src/system/host/in_process_server_host.dart';
 export 'src/system/host/host_tool_registry.dart';
+export 'src/system/host/client_tools.dart';
 export 'src/system/host/mcp_server_spec.dart';
 
 // UI ↔ kernel standard wiring layer. Session lifecycle · Zone-scoped

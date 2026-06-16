@@ -9,6 +9,14 @@
 /// agent might persist.
 ///
 /// Kept independent of vibe so the two tools' KV trees never collide.
+///
+/// Optional workspace-scope enforcement: when [workspaceId] is non-null,
+/// keys beginning with `ws/` must begin with `ws/<workspaceId>/`
+/// (anything else throws); keys without the `ws/` prefix are treated as
+/// global and bypass the check. When [workspaceId] is null (default) no
+/// enforcement happens — the plain file-KV behaviour. This lets a host
+/// adopt the single canonical file KV (replacing bespoke per-tool
+/// adapters) while preserving per-workspace isolation.
 library;
 
 import 'dart:async';
@@ -19,26 +27,64 @@ import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:path/path.dart' as p;
 
 class KvStoragePortAdapter implements mb.KvStoragePort {
-  KvStoragePortAdapter({required this.rootDir});
+  KvStoragePortAdapter({required this.rootDir, String? workspaceId})
+      : _workspaceId = workspaceId;
 
   final String rootDir;
+
+  /// Active workspace id for scope enforcement; null disables it.
+  /// Mutable so a host can re-point the same adapter on workspace switch.
+  String? _workspaceId;
+
+  String? get workspaceId => _workspaceId;
+  set workspaceId(String? value) => _workspaceId = value;
 
   String _filePathFor(String key) {
     final clean = key.replaceAll(RegExp(r'^/+'), '');
     return p.join(rootDir, '$clean.json');
   }
 
+  /// Throws [ArgumentError] when [key] targets a different workspace than
+  /// the active [workspaceId]. No-op when enforcement is disabled or the
+  /// key is global (no `ws/` prefix).
+  void _assertScope(String key) {
+    final ws = _workspaceId;
+    if (ws == null) return;
+    if (!key.startsWith('ws/')) return; // global keys allowed
+    final required = 'ws/$ws/';
+    if (!key.startsWith(required)) {
+      throw ArgumentError(
+        'workspace scope violation: $key (active=$ws)',
+      );
+    }
+  }
+
+  /// `jsonEncode` fallback for non-JSON-native values (e.g. flowbrain
+  /// envelopes). Duck-typed `toJson()` first; otherwise `toString()` so a
+  /// write never fails on an opaque value (lossy round-trip accepted).
+  Object? _encodeFallback(Object? value) {
+    try {
+      return (value as dynamic).toJson();
+    } catch (_) {
+      return value?.toString();
+    }
+  }
+
   @override
   Future<void> set(String key, dynamic value) async {
+    _assertScope(key);
     final file = File(_filePathFor(key));
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(jsonEncode(value), flush: true);
+    await tmp.writeAsString(
+        jsonEncode(value, toEncodable: _encodeFallback),
+        flush: true);
     await tmp.rename(file.path);
   }
 
   @override
   Future<dynamic> get(String key) async {
+    _assertScope(key);
     final file = File(_filePathFor(key));
     if (!await file.exists()) return null;
     try {
@@ -50,12 +96,14 @@ class KvStoragePortAdapter implements mb.KvStoragePort {
 
   @override
   Future<void> remove(String key) async {
+    _assertScope(key);
     final file = File(_filePathFor(key));
     if (await file.exists()) await file.delete();
   }
 
   @override
   Future<bool> exists(String key) async {
+    _assertScope(key);
     return File(_filePathFor(key)).exists();
   }
 

@@ -55,6 +55,31 @@ class McpClientKernelHost implements KernelClientHost {
     return conn;
   }
 
+  /// Open a connection over a host-supplied **extension transport**
+  /// (serial / usb / ble / ws / tcp / custom), built outside the kernel and
+  /// injected here. The kernel never depends on the transport's platform
+  /// libraries — the host owns that (e.g. mcp_bridge's FFI transports). This
+  /// is the injection seam described in `specs/platform/08-extension.md` §4:
+  /// the seam lives in the kernel (pure, no FFI), the impl in the host.
+  Future<KernelClientConnection> connectWith({
+    required String id,
+    required cli.ClientTransport transport,
+  }) async {
+    final existing = _connections[id];
+    if (existing != null && existing.isConnected) return existing;
+
+    final client = cli.Client(
+      name: name,
+      version: version,
+      capabilities: const cli.ClientCapabilities(),
+    );
+    await client.connect(transport);
+
+    final conn = _McpClientConnection(id: id, client: client);
+    _connections[id] = conn;
+    return conn;
+  }
+
   Future<cli.ClientTransport> _openTransport({
     required KernelTransportKind transport,
     String? endpoint,
