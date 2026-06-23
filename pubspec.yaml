@@ -5,7 +5,7 @@ description: >
   RAG over mcp_bundle and flowbrain_core. Products (builder / industrial
   HMI / medical / education / B2B / personal) wire kernel pieces with
   their own UI and domain workflow.
-version: 0.1.2
+version: 0.1.3
 homepage: https://app-appplayer.github.io/makemind
 repository: https://github.com/app-appplayer/brain_kernel
 issue_tracker: https://github.com/app-appplayer/brain_kernel/issues
@@ -26,11 +26,11 @@ dependencies:
   crypto: ^3.0.5
   meta: ^1.15.0
   path: ^1.9.0
-  mcp_bundle: ^0.4.1
+  mcp_bundle: ^0.4.4
   mcp_client: ^2.0.0
   mcp_llm: ^2.1.1
   mcp_server: ^2.0.0
-  flowbrain_core: ^0.1.4
+  flowbrain_core: ^0.1.5
   # FlowDefinitionWorkflow adapter (declarative bundle.flow.flows[]
   # → mcp_knowledge_ops Workflow instance) imports Workflow /
   # WorkflowStage / WorkflowResult / WorkflowMetrics / StageResult

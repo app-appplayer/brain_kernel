@@ -1,6 +1,9 @@
-/// `bk.agent.*` — AgentFacade wrappers (11 tools): list / get / ask /
+/// `bk.agent.*` — AgentFacade wrappers (13 tools): list / get / ask /
 /// create / delete / history / assign_skill / assign_profile /
-/// assign_philosophy / assign_facts / materialize.
+/// assign_philosophy / assign_facts / materialize / route / review.
+/// route + review (spec `platform/12-flowbrain-runtime.md` §5) expose
+/// manager routing + reviewer verdict as tools so workflows / agents can
+/// drive rule-based agent→agent handoff.
 library;
 
 import 'package:flowbrain_core/flowbrain_core.dart' as fb;
@@ -223,6 +226,66 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     }
   }
 
+  // §5 (orchestration): manager routes a request to the best worker.
+  Future<Object?> route(Map<String, dynamic> p) async {
+    final managerId = p['managerId'];
+    final request = p['request'];
+    if (managerId is! String || managerId.isEmpty) {
+      return stdErr('managerId required');
+    }
+    if (request is! String) return stdErr('request required');
+    final candidates = (p['candidateAgentIds'] as List?)
+        ?.cast<String>()
+        .map(app.scopeIdFor)
+        .toList();
+    try {
+      final d = await facade().route(
+        app.scopeIdFor(managerId),
+        request,
+        candidateAgentIds: candidates,
+      );
+      return <String, dynamic>{
+        'ok': true,
+        'targetAgentId': d.targetAgentId,
+        'confidence': d.confidence,
+        if (d.reason != null) 'reason': d.reason,
+      };
+    } catch (e) {
+      return stdErr('route failed: $e');
+    }
+  }
+
+  // §5 (orchestration): reviewer verdict over a target agent's reply.
+  Future<Object?> review(Map<String, dynamic> p) async {
+    final reviewerId = p['reviewerId'];
+    final targetAgentId = p['targetAgentId'];
+    final content = p['content'];
+    if (reviewerId is! String || reviewerId.isEmpty) {
+      return stdErr('reviewerId required');
+    }
+    if (targetAgentId is! String || content is! String) {
+      return stdErr('targetAgentId + content required');
+    }
+    try {
+      final reply = fb.AgentReply(
+        id: '',
+        agentId: app.scopeIdFor(targetAgentId),
+        content: content,
+        model: '',
+        timestamp: DateTime.now(),
+      );
+      final r = await facade().review(app.scopeIdFor(reviewerId), reply);
+      return <String, dynamic>{
+        'ok': true,
+        'verdict': r.verdict.name,
+        if (r.severity != null) 'severity': r.severity!.name,
+        if (r.comments != null) 'comments': r.comments,
+      };
+    } catch (e) {
+      return stdErr('review failed: $e');
+    }
+  }
+
   return <String, InProcessToolHandler>{
     'bk.agent.list': list,
     'bk.agent.get': get,
@@ -235,5 +298,7 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     'bk.agent.assign_philosophy': assignPhilosophy,
     'bk.agent.assign_facts': assignFacts,
     'bk.agent.materialize': materialize,
+    'bk.agent.route': route,
+    'bk.agent.review': review,
   };
 }

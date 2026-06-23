@@ -25,6 +25,8 @@
 /// the same endpoint without any further work from the host.
 library;
 
+import 'dart:convert';
+
 import 'kernel_envelope.dart';
 import 'kernel_server_host.dart';
 
@@ -39,12 +41,28 @@ typedef DispatcherAttach = void Function(
 
 typedef DispatcherDetach = void Function(String exposedName);
 
+/// Host-supplied human-confirm gate for destructive (irreversible) tools
+/// — git push, mail, settlement, external publish, etc. (spec
+/// `platform/12-flowbrain-runtime.md` §6). Returns true to allow the call,
+/// false to block. The core has no UI; the host decides how to obtain
+/// approval. A tool registered `destructive: true` with no callback wired is
+/// blocked (deny-by-default).
+typedef ConfirmDestructive = Future<bool> Function(
+  String toolName,
+  Map<String, dynamic> args,
+);
+
 class HostToolRegistry {
   HostToolRegistry({
     required this.endpoint,
     required this.attachToDispatcher,
     required this.detachFromDispatcher,
+    this.confirmDestructive,
   });
+
+  /// Optional human-confirm gate for tools registered `destructive: true`
+  /// (§6). When null, destructive tools are blocked (deny-by-default).
+  final ConfirmDestructive? confirmDestructive;
 
   /// Endpoint that receives the same handler (mirrored for external
   /// transports `tools/list` + `tools/call`).
@@ -68,15 +86,22 @@ class HostToolRegistry {
   /// endpoint so external clients can introspect the same metadata
   /// the bundle declared. Idempotent — re-registering the same
   /// `(bundleId, rawName)` pair replaces the prior handler.
+  /// [destructive] marks an irreversible tool (git push / mail / settlement
+  /// / external publish). Such tools are gated through [confirmDestructive]
+  /// before running — blocked when the human declines or no callback is
+  /// wired (§6). Default false (existing tools unaffected).
   String registerExposed({
     required String bundleId,
     required String rawName,
     required String description,
     required KernelToolHandler handler,
     Map<String, dynamic>? inputSchema,
+    bool destructive = false,
   }) {
     final exposedName = _composeExposedName(bundleId, rawName);
-    attachToDispatcher(exposedName, handler);
+    final effectiveHandler =
+        destructive ? _guardDestructive(exposedName, handler) : handler;
+    attachToDispatcher(exposedName, effectiveHandler);
     endpoint.addTool(
       name: exposedName,
       description: description,
@@ -85,9 +110,38 @@ class HostToolRegistry {
             'type': 'object',
             'additionalProperties': true,
           },
-      handler: handler,
+      handler: effectiveHandler,
     );
     return exposedName;
+  }
+
+  /// Wrap a destructive tool's handler so it requires human confirmation
+  /// before running. Blocked (not run) when [confirmDestructive] is null
+  /// (deny-by-default) or the human declines (§6).
+  KernelToolHandler _guardDestructive(
+      String toolName, KernelToolHandler handler) {
+    return (args) async {
+      final confirm = confirmDestructive;
+      final approved = confirm != null && await confirm(toolName, args);
+      if (!approved) {
+        return KernelToolResult(
+          content: [
+            KernelTextContent(
+              text: jsonEncode(<String, dynamic>{
+                'ok': false,
+                'error': 'destructive_action_blocked',
+                'tool': toolName,
+                'message': confirm == null
+                    ? 'destructive tool requires a human-confirm callback (none wired)'
+                    : 'destructive action was not approved by the human',
+              }),
+            ),
+          ],
+          isError: true,
+        );
+      }
+      return handler(args);
+    };
   }
 
   /// Remove a previously registered tool from both layers.

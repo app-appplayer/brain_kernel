@@ -1,3 +1,19 @@
+## 0.1.3 - 2026-06-23 - FlowBrain orchestration tools (route/review) + destructive-action gate (spec 12 §5·§6)
+
+### Added
+- **§5** — `bk.agent.route` + `bk.agent.review` standard tools (agent_tools: 11 → 13) — expose the AgentFacade's manager-routing + reviewer-verdict as MCP tools so workflows / agents can drive rule-based agent→agent handoff (spec `platform/12-flowbrain-runtime.md` §5). `route{managerId, request, candidateAgentIds?}` → `{targetAgentId, confidence, reason}`; `review{reviewerId, targetAgentId, content}` → `{verdict, severity, comments}`. standardTools map: 45 → 47.
+- **§6** — `HostToolRegistry` destructive-action gate: `registerExposed(destructive: true)` + optional `confirmDestructive` host callback (ctor). Destructive tools (git push / mail / settlement / external publish) are gated through the callback before running — **blocked when the human declines or no callback is wired (deny-by-default)** (spec §6). `destructive` defaults false → existing tools unaffected. The confirm UI is host-supplied (core has no UI). 209 PASS.
+
+### Fixed
+- **`bk.philosophy.put` accepts a raw Ethos and never silently drops the body.** Previously `put` called `EthosRecord.fromJson(input)` directly, so an author / LLM passing a raw Ethos (no `payload` envelope key) stored `payload: {}` — the body was lost and every later `getEthos` / `intervene` / `checkProhibitions` operated on an empty ethos (or crashed in `Ethos.fromJson`). `put` now detects the shape: an envelope (`payload` present) is stored as before; a raw Ethos is wrapped into an `EthosRecord` with `payload: <ethos>`, `id`/`name`/`version` derived from the ethos (version from `metadata.version`). The body is validated via `Ethos.fromJson` before storage, returning a clear `invalid ethos: <field-named message>` (mcp_bundle 0.4.4) instead of storing garbage. Integration test: `test/system/philosophy_authoring_test.dart` (raw round-trip preserves body · envelope back-compat · malformed → clear error) over a real `KvEthosStoreAdapter`. 212 PASS.
+
+### Changed (dependency floor)
+- `flowbrain_core` `^0.1.4` → `^0.1.5` — track the latest published cascade release (flowbrain_core 0.1.5 wires spec 12 §2·§3·§3b·§4·§4b). The kernel's §5 route/review tools wrap the existing `AgentFacade.route`/`review` (present since 0.1.x), so this is an internal-latest constraint bump, not a symbol requirement.
+- `mcp_bundle` `^0.4.1` → `^0.4.4` — the `bk.philosophy.put` fix above relies on the Ethos graph `fromJson` throwing field-named `FormatException`s (mcp_bundle 0.4.4) for the clear-error guarantee; floored to **guarantee** it.
+
+### Backward compatibility
+- Fully additive. No existing `HostToolRegistry`, `BundleActivation`, `standardTools`, or host-abstract surface changed. Tools registered without `destructive: true` and hosts that don't pass `confirmDestructive` see no behavior change.
+
 ## 0.1.2 - 2026-06-10 - Extension transport seam + clientTools export (additive)
 
 ### Added

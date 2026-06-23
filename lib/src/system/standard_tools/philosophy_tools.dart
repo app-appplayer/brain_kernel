@@ -26,11 +26,43 @@ Map<String, InProcessToolHandler> buildPhilosophyTools(KernelApp app) {
     final raw = p['ethos'];
     if (raw is! Map) return stdErr('ethos object required');
     try {
-      final m = Map<String, dynamic>.from(raw);
-      m['id'] = app.scopeIdFor(m['id'] as String);
-      final record = mb.EthosRecord.fromJson(m);
+      final input = Map<String, dynamic>.from(raw);
+      // Accept either an EthosRecord envelope ({id,name,version,payload:{…}})
+      // or a raw Ethos ({id,name,valuePriorities,prohibitions,metadata,…}).
+      // The natural authoring shape (a host or an LLM via bk.philosophy.put)
+      // is a raw Ethos; wrap it into the storage envelope so the body is
+      // never silently lost to an empty payload.
+      final isEnvelope = input['payload'] is Map;
+      final ethosJson = isEnvelope
+          ? Map<String, dynamic>.from(input['payload'] as Map)
+          : input;
+
+      // Validate the ethos body parses — a malformed ethos now yields a clear
+      // field-named error (mcp_bundle 0.4.4) instead of a body that round-trips
+      // to a crash at intervene/getEthos time.
+      mb.Ethos.fromJson(ethosJson);
+
+      final id = isEnvelope ? input['id'] : ethosJson['id'];
+      if (id is! String || id.isEmpty) {
+        return stdErr('ethos.id (non-empty String) required');
+      }
+      final name = (isEnvelope ? input['name'] : ethosJson['name']) as String?;
+      final version = (isEnvelope
+          ? input['version']
+          : (ethosJson['metadata'] as Map?)?['version']) as String?;
+
+      final record = mb.EthosRecord(
+        id: app.scopeIdFor(id),
+        name: name ?? id,
+        version: version ?? '1.0.0',
+        payload: ethosJson,
+        createdAt: DateTime.now(),
+        active: (isEnvelope ? input['active'] : false) as bool? ?? false,
+      );
       await s.putEthos(record);
       return <String, dynamic>{'ok': true, 'id': record.id};
+    } on FormatException catch (e) {
+      return stdErr('invalid ethos: ${e.message}');
     } catch (e) {
       return stdErr('putEthos failed: $e');
     }

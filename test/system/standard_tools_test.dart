@@ -22,11 +22,11 @@ void main() {
       await app.shutdown();
     });
 
-    test('returns the full 45-tool map', () {
+    test('returns the full 47-tool map', () {
       final tools = standardTools(app);
-      // 9 fact + 3 skill + 4 profile + 6 philosophy + 10 ops + 11 agent
-      // + 2 knowledge = 45. (philosophy + check; ops = 7 facade + 3 behavior.)
-      expect(tools.length, 45);
+      // 9 fact + 3 skill + 4 profile + 6 philosophy + 10 ops + 13 agent
+      // + 2 knowledge = 47. (agent: 11 + route + review, spec 12 §5.)
+      expect(tools.length, 47);
     });
 
     test('every facade prefix is present', () {
@@ -77,7 +77,7 @@ void main() {
       );
       final ep = app.addEndpoint(label: 'main');
       ep.addStandardTools(app);
-      expect(ep.server.toolScopes.length, 45);
+      expect(ep.server.toolScopes.length, 47);
       expect(ep.server.toolScopes.containsKey('bk.behavior.run'), isTrue);
       expect(ep.server.toolScopes.containsKey('bk.fact.write'), isTrue);
       expect(ep.server.toolScopes.containsKey('bk.agent.materialize'),
