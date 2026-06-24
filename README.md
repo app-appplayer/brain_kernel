@@ -23,7 +23,7 @@ plumbing themselves.
   (tool scope + transport picker), LLM session manager, chat
   controller + system-prompt composer.
 - **System** — `BundleActivation` + `BundleActivationRegistry`: the
-  single standard API every host (vibe_studio · AppPlayer · future
+  single standard API every host (AppPlayer Studio · AppPlayer · future
   hosts) uses to activate a bundle, register its assets, and tear it
   down. Per-bundle isolation via `<bundleId>.<asset.id>` prefixing.
 
@@ -47,10 +47,8 @@ final activation = bk.BundleActivation(
 await activation.activate(myBundle); // McpBundle
 ```
 
-Hosts (AppPlayer Core, vibe_studio, ...) drive this lifecycle from their
-own session-management code. See
-[`knowledge-operations.md`](https://github.com/app-appplayer/makemind/blob/main/tools/builder/vibe_studio/docs/knowledge-operations.md)
-for the full host-integration manual.
+Hosts (AppPlayer Core, AppPlayer Studio, ...) drive this lifecycle from
+their own session-management code.
 
 ## Re-exports
 
@@ -69,7 +67,7 @@ Products do not need to depend on these packages directly; depending on
 ## Status
 
 `brain_kernel` is the canonical kernel for the MakeMind ecosystem and
-the foundation that AppPlayer Core, vibe_studio, and the FlowBrain
+the foundation that AppPlayer Core, AppPlayer Studio, and the FlowBrain
 products build on. The API surface is stable enough for early adopters
 but still evolves with the upstream `mcp_bundle` / `flowbrain_core`
 spec — pin caret versions.

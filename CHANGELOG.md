@@ -1,3 +1,14 @@
+## 0.1.4 - 2026-06-24 - BundleActivation tool-dispatch via injected callTool closure (additive)
+
+### Added
+- **`BundleActivation` optional `callTool` closure** — an alternative to a full `KernelServerHost boot` for wiring flow / behavior tool-action dispatch. A host whose endpoint is a registry (e.g. a `BuiltinToolRegistry` that exposes `callTool` without ever surfacing a raw `KernelServerHost`) can now inject just the dispatch closure: `BundleActivation(system: ..., bundleId: ..., callTool: server.callTool)`. `registerBehavior` / `registerFlow` route tool steps through `callTool ?? boot?.callTool`. Mirrors the skill-executor `callTool` binding pattern already used across hosts. Tests: `bundle_activation_behavior_test.dart` (closure dispatch with `boot == null` · unwired-throws). 214 PASS.
+
+### Fixed
+- **Registry-host topologies could not dispatch tool-action behavior / flow steps.** When a host endpoint is a `BuiltinToolRegistry` (not a raw `KernelServerHost`), `boot` is necessarily null and there was no other way to supply dispatch, so **every** `kind: tool` behavior / flow step threw `tool dispatch not wired (<ref>)` at run time (the live-registered philosophy-gate path was latently affected too). The `callTool` seam closes that gap; the same diagnostic now fires only when neither `callTool` nor `boot` is provided.
+
+### Backward compatibility
+- Fully additive. The `boot` path and the `tool dispatch not wired` diagnostic are unchanged. `BundleActivation` callers that don't pass `callTool` see no behavior change.
+
 ## 0.1.3 - 2026-06-23 - FlowBrain orchestration tools (route/review) + destructive-action gate (spec 12 §5·§6)
 
 ### Added

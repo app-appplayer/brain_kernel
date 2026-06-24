@@ -74,4 +74,82 @@ void main() {
         await runtime.behaviorRegistry['b.approve']!().resume('run1');
     expect(resumed.isComplete, isTrue);
   });
+
+  test(
+      'tool-action dispatches through injected callTool closure (boot == null)',
+      () async {
+    // Registry-host topology: the host endpoint is a BuiltinToolRegistry, not
+    // a raw KernelServerHost, so `boot` is null. Without an injected callTool
+    // closure the tool step throws "tool dispatch not wired"; with it the
+    // dispatch routes through the closure.
+    final wiring = await _bootWiring();
+    final calls = <(String, Map<String, dynamic>)>[];
+    final activation = BundleActivation(
+      system: wiring.system,
+      bundleId: 'b',
+      // boot intentionally omitted (null) — only the closure is wired.
+      callTool: (tool, args) async {
+        calls.add((tool, args));
+        return KernelToolResult(
+          content: const [KernelTextContent(text: '{"ok":true}')],
+        );
+      },
+    );
+
+    final bundle = mb.McpBundle(
+      manifest: mb.BundleManifest(id: 'b', name: 'b', version: '1.0.0'),
+      behavior: mb.BehaviorSection(definitions: <mb.BehaviorDefinition>[
+        mb.BehaviorDefinition(
+          id: 'invoke',
+          name: 'Invoke a tool',
+          steps: <mb.BehaviorStepDef>[
+            const mb.BehaviorStepDef(
+              id: 'call',
+              action: {
+                'tool': 'my.tool',
+                'args': {'x': 1},
+              },
+            ),
+            const mb.BehaviorStepDef(id: 'done'),
+          ],
+        ),
+      ]),
+    );
+    final result = await activation.activate(bundle);
+    expect(result.errors, isEmpty);
+
+    final runtime = wiring.system.opsRuntime as ko.OpsRuntime;
+    final run = await runtime.behaviorRegistry['b.invoke']!().run('run1', {});
+    expect(run.isComplete, isTrue);
+    // The closure ran with the step's tool ref + args.
+    expect(calls, hasLength(1));
+    expect(calls.single.$1, 'my.tool');
+    expect(calls.single.$2, {'x': 1});
+  });
+
+  test('tool-action without boot or callTool throws "not wired"', () async {
+    final wiring = await _bootWiring();
+    final activation = BundleActivation(system: wiring.system, bundleId: 'b');
+    final bundle = mb.McpBundle(
+      manifest: mb.BundleManifest(id: 'b', name: 'b', version: '1.0.0'),
+      behavior: mb.BehaviorSection(definitions: <mb.BehaviorDefinition>[
+        mb.BehaviorDefinition(
+          id: 'invoke',
+          name: 'Invoke a tool',
+          steps: <mb.BehaviorStepDef>[
+            const mb.BehaviorStepDef(
+              id: 'call',
+              action: {'tool': 'my.tool'},
+            ),
+          ],
+        ),
+      ]),
+    );
+    await activation.activate(bundle);
+    final runtime = wiring.system.opsRuntime as ko.OpsRuntime;
+    final run = await runtime.behaviorRegistry['b.invoke']!().run('run1', {});
+    // Dispatch is unwired → the run fails with the diagnostic message.
+    expect(run.isComplete, isFalse);
+    expect(run.error, contains('tool dispatch not wired'));
+  });
 }

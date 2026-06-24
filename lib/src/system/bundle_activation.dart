@@ -29,7 +29,9 @@
 /// - `KnowledgeSystem` — facade pool (facts / skill / profile /
 ///   philosophy / agents / ethosStore / opsRuntime).
 /// - `KernelServerHost` — needed when a registered flow's
-///   `toolDispatcher` closure has to call `boot.callTool`.
+///   `toolDispatcher` closure has to call `boot.callTool`. A host
+///   whose endpoint is a registry (no raw `KernelServerHost`) can
+///   instead inject a `callTool` closure for the same dispatch.
 library;
 
 import 'dart:convert';
@@ -78,6 +80,7 @@ class BundleActivation {
     required this.system,
     required this.bundleId,
     this.boot,
+    this.callTool,
     this.behaviorStore,
   });
 
@@ -98,6 +101,19 @@ class BundleActivation {
   /// `skillRunner`, ...). When null, flow registration still works
   /// but action/api steps throw at run time.
   final KernelServerHost? boot;
+
+  /// Optional in-process tool dispatch closure — an alternative to a
+  /// full [boot] host when the host endpoint is a registry (e.g. a
+  /// `BuiltinToolRegistry`) that exposes `callTool` without ever
+  /// surfacing a raw [KernelServerHost]. Flow/behavior tool-action
+  /// steps dispatch through `callTool ?? boot?.callTool`, so a host
+  /// can wire tool dispatch with just this closure (mirroring how
+  /// skill executors bind a host `callTool`). When both are provided,
+  /// `callTool` takes precedence.
+  final Future<KernelToolResult> Function(
+    String tool,
+    Map<String, dynamic> args,
+  )? callTool;
 
   // ── Per-bundle catalog ────────────────────────────────────────
   final List<String> _registeredSkills = <String>[];
@@ -392,12 +408,12 @@ class BundleActivation {
       timeoutMs: fl.timeoutMs,
       retry: fl.retry,
     );
-    final b = boot;
+    final invoke = callTool ?? boot?.callTool;
     opsRuntime.workflowRegistry[exposedId] = () => FlowDefinitionWorkflow(
           namespacedFlow,
-          toolDispatcher: b == null
+          toolDispatcher: invoke == null
               ? null
-              : (tool, args) => b.callTool(tool, args),
+              : (tool, args) => invoke(tool, args),
           skillRunner: (skillId, inputs) async {
             final result = await system.skill.execute(skillId, inputs);
             return result;
@@ -440,7 +456,7 @@ class BundleActivation {
               onFailure: s.onFailure,
             ))
         .toList();
-    final b = boot;
+    final invoke = callTool ?? boot?.callTool;
     // One shared store per registered behavior so run + resume across
     // separate tool calls see the same suspended run.
     final store = behaviorStore ?? ops.EphemeralStateStore();
@@ -457,10 +473,10 @@ class BundleActivation {
                     ? Map<String, dynamic>.from(r)
                     : <String, dynamic>{'result': r};
               }
-              if (b == null) {
+              if (invoke == null) {
                 throw StateError('tool dispatch not wired (${action.ref})');
               }
-              final r = await b.callTool(action.ref, action.args);
+              final r = await invoke(action.ref, action.args);
               return _behaviorToolOutput(r);
             },
           ),
