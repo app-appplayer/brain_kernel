@@ -1,3 +1,8 @@
+## 0.1.5 - 2026-06-30 - KvStoragePortAdapter.keys(prefix:) string-prefix contract fix
+
+### Fixed
+- **`KvStoragePortAdapter.keys(prefix:)` violated the string-prefix contract.** It treated `prefix` as a directory path (`<rootDir>/<prefix>/`), so flat colon-namespaced keys (e.g. `philosophy.ethos:<id>`, stored as a single `<key>.json` file) were never listed: `keys(prefix: 'philosophy.ethos:')` returned `[]` even though `get`/`set` worked and `keys()` (no prefix) listed them. This surfaced as `bk.philosophy.list` returning an empty array while `put`/`get` succeeded. The method now walks the full store, reconstructs each key, and filters by `key.startsWith(prefix)` — matching the in-memory reference `KvStoragePort`. Hierarchical slash-namespaced prefixes (e.g. `ws/A/`) still match (keys use `/` separators) and partial-segment prefixes now match correctly too. Regression tests added (`kv_storage_port_adapter_test.dart`). 218 PASS.
+
 ## 0.1.4 - 2026-06-24 - BundleActivation tool-dispatch via injected callTool closure (additive)
 
 ### Added

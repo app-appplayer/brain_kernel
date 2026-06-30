@@ -5,7 +5,7 @@ description: >
   RAG over mcp_bundle and flowbrain_core. Products (builder / industrial
   HMI / medical / education / B2B / personal) wire kernel pieces with
   their own UI and domain workflow.
-version: 0.1.4
+version: 0.1.5
 homepage: https://app-appplayer.github.io/makemind
 repository: https://github.com/app-appplayer/brain_kernel
 issue_tracker: https://github.com/app-appplayer/brain_kernel/issues

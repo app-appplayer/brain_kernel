@@ -109,10 +109,9 @@ class KvStoragePortAdapter implements mb.KvStoragePort {
 
   @override
   Future<List<String>> keys({String? prefix}) async {
-    final base = prefix == null || prefix.isEmpty
-        ? Directory(rootDir)
-        : Directory(p.join(rootDir, prefix));
+    final base = Directory(rootDir);
     if (!await base.exists()) return const <String>[];
+    final hasPrefix = prefix != null && prefix.isNotEmpty;
     final out = <String>[];
     await for (final entity
         in base.list(recursive: true, followLinks: false)) {
@@ -121,7 +120,16 @@ class KvStoragePortAdapter implements mb.KvStoragePort {
       final rel = p
           .relative(entity.path, from: rootDir)
           .replaceAll(RegExp(r'\.json$'), '');
-      out.add(rel.replaceAll(p.separator, '/'));
+      final key = rel.replaceAll(p.separator, '/');
+      // String-prefix contract (matches the in-memory reference
+      // KvStoragePort: `k.startsWith(prefix)`). The prefix must NOT be
+      // treated as a directory: a directory-scoped walk drops flat
+      // colon-namespaced keys (e.g. `philosophy.ethos:<id>`, stored as a
+      // single file) whose prefix is not a real subdirectory, and it also
+      // misses partial-segment prefixes. Hierarchical slash-namespaced
+      // keys still match because reconstructed keys use `/` separators.
+      if (hasPrefix && !key.startsWith(prefix)) continue;
+      out.add(key);
     }
     out.sort();
     return out;

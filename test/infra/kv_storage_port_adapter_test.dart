@@ -63,6 +63,50 @@ void main() {
     });
   });
 
+  group('KvStoragePortAdapter — keys(prefix:) string-prefix contract', () {
+    test('colon-namespaced flat keys are listed by prefix (regression)',
+        () async {
+      // Mirrors KvEthosStoreAdapter: set('philosophy.ethos:<id>', ...).
+      // Previously keys(prefix:) treated the prefix as a directory and
+      // returned [] for these flat keys, so bk.philosophy.list was empty.
+      final kv = KvStoragePortAdapter(rootDir: tmp.path);
+      await kv.set('philosophy.ethos:alpha', {'id': 'alpha'});
+      await kv.set('philosophy.ethos:beta', {'id': 'beta'});
+
+      expect(await kv.get('philosophy.ethos:alpha'), {'id': 'alpha'});
+      expect(
+        await kv.keys(prefix: 'philosophy.ethos:'),
+        ['philosophy.ethos:alpha', 'philosophy.ethos:beta'],
+      );
+      expect((await kv.keys()).length, 2);
+    });
+
+    test('hierarchical slash keys still match a directory-style prefix',
+        () async {
+      final kv = KvStoragePortAdapter(rootDir: tmp.path);
+      await kv.set('ws/A/m/1', 'a');
+      await kv.set('ws/A/m/2', 'b');
+      await kv.set('global/z', 'c');
+
+      expect(await kv.keys(prefix: 'ws/A/'), ['ws/A/m/1', 'ws/A/m/2']);
+    });
+
+    test('partial-segment prefix matches by string, not directory', () async {
+      final kv = KvStoragePortAdapter(rootDir: tmp.path);
+      await kv.set('ws/A/x', 1);
+      await kv.set('ws/AB/y', 2);
+
+      expect(await kv.keys(prefix: 'ws/A'), ['ws/A/x', 'ws/AB/y']);
+    });
+
+    test('empty store / non-matching prefix returns empty', () async {
+      final kv = KvStoragePortAdapter(rootDir: tmp.path);
+      expect(await kv.keys(prefix: 'nope:'), isEmpty);
+      await kv.set('a:1', 1);
+      expect(await kv.keys(prefix: 'b:'), isEmpty);
+    });
+  });
+
   group('KvStoragePortAdapter — encode fallback', () {
     test('non-JSON-native value with toJson() round-trips', () async {
       final kv = KvStoragePortAdapter(rootDir: tmp.path);
