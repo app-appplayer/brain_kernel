@@ -109,4 +109,92 @@ void main() {
           allOf(contains('rationale'), contains('Prohibition')));
     });
   });
+
+  group('bk.philosophy provenance discipline (judgment determinism)', () {
+    late KernelApp app;
+
+    setUp(() async {
+      app = await KernelApp.boot(
+        workspaceId: 't',
+        kvStorage: InMemoryKvStoragePort(),
+      );
+    });
+
+    tearDown(() async {
+      await app.shutdown();
+    });
+
+    test('an anchor (no provenance) is unconstrained and activates', () async {
+      final tools = standardTools(app);
+      final e = _rawEthos()..['active'] = true;
+      final putRes =
+          await tools['bk.philosophy.put']!(<String, dynamic>{'ethos': e})
+              as Map;
+      expect(putRes['ok'], isTrue);
+      final actRes =
+          await tools['bk.philosophy.activate']!(<String, dynamic>{'id': 'pr_ethos'})
+              as Map;
+      expect(actRes['ok'], isTrue);
+    });
+
+    test('a derived ethos without `serves` is rejected at put', () async {
+      final tools = standardTools(app);
+      final e = _rawEthos()
+        ..['id'] = 'd_ethos'
+        ..['provenance'] = <String, dynamic>{'kind': 'derived'};
+      final putRes =
+          await tools['bk.philosophy.put']!(<String, dynamic>{'ethos': e})
+              as Map;
+      expect(putRes['ok'], isFalse);
+      expect(putRes['error'].toString(),
+          allOf(contains('serves'), contains('derived')));
+    });
+
+    test('a derived ethos with `serves` is stored INACTIVE even if active:true',
+        () async {
+      final tools = standardTools(app);
+      final e = _rawEthos()
+        ..['id'] = 'd2_ethos'
+        ..['active'] = true
+        ..['provenance'] = <String, dynamic>{
+          'kind': 'derived',
+          'serves': 'pr_ethos',
+        };
+      final putRes =
+          await tools['bk.philosophy.put']!(<String, dynamic>{'ethos': e})
+              as Map;
+      expect(putRes['ok'], isTrue);
+      final getRes =
+          await tools['bk.philosophy.get']!(<String, dynamic>{'id': 'd2_ethos'})
+              as Map;
+      // Forced inactive — a judgment cannot self-promote to active principle.
+      expect((getRes['ethos'] as Map)['active'], isFalse);
+      // Provenance survives the store round-trip with no core type change.
+      final payload = (getRes['ethos'] as Map)['payload'] as Map;
+      expect((payload['provenance'] as Map)['serves'], 'pr_ethos');
+    });
+
+    test('a workaround with `serves` can be confirmed via activate', () async {
+      final tools = standardTools(app);
+      final e = _rawEthos()
+        ..['id'] = 'd3_ethos'
+        ..['provenance'] = <String, dynamic>{
+          'kind': 'workaround',
+          'serves': 'pr_ethos',
+          'validWhile': 'agents_unsplit',
+        };
+      expect(
+          ((await tools['bk.philosophy.put']!(<String, dynamic>{'ethos': e}))
+              as Map)['ok'],
+          isTrue);
+      final actRes =
+          await tools['bk.philosophy.activate']!(<String, dynamic>{'id': 'd3_ethos'})
+              as Map;
+      expect(actRes['ok'], isTrue);
+      final activeRes =
+          await tools['bk.philosophy.get_active_id']!(<String, dynamic>{})
+              as Map;
+      expect(activeRes['activeId'].toString(), contains('d3_ethos'));
+    });
+  });
 }

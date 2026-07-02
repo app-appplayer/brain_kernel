@@ -22,11 +22,12 @@ void main() {
       await app.shutdown();
     });
 
-    test('returns the full 47-tool map', () {
+    test('returns the full 48-tool map', () {
       final tools = standardTools(app);
-      // 9 fact + 3 skill + 4 profile + 6 philosophy + 10 ops + 13 agent
-      // + 2 knowledge = 47. (agent: 11 + route + review, spec 12 §5.)
-      expect(tools.length, 47);
+      // 9 fact + 3 skill + 4 profile + 6 philosophy + 10 ops + 14 agent
+      // + 2 knowledge = 48. (agent: 12 + route + review, spec 12 §5;
+      // update closes the create/delete CRUD asymmetry.)
+      expect(tools.length, 48);
     });
 
     test('every facade prefix is present', () {
@@ -77,7 +78,7 @@ void main() {
       );
       final ep = app.addEndpoint(label: 'main');
       ep.addStandardTools(app);
-      expect(ep.server.toolScopes.length, 47);
+      expect(ep.server.toolScopes.length, 48);
       expect(ep.server.toolScopes.containsKey('bk.behavior.run'), isTrue);
       expect(ep.server.toolScopes.containsKey('bk.fact.write'), isTrue);
       expect(ep.server.toolScopes.containsKey('bk.agent.materialize'),
@@ -101,6 +102,42 @@ void main() {
       final raw = await tools['bk.profile.list']!(const <String, dynamic>{});
       expect(raw, isA<Map>());
       expect((raw as Map)['ok'], isTrue);
+
+      await app.shutdown();
+    });
+
+    test(
+        'bk.agent.update changes role in place (no delete/recreate), '
+        'omissions preserved, unknown role rejected', () async {
+      final app = await KernelApp.boot(
+        workspaceId: 't',
+        kvStorage: InMemoryKvStoragePort(),
+      );
+      final tools = standardTools(app);
+
+      final created = await tools['bk.agent.create']!(<String, dynamic>{
+        'id': 'nora',
+        'displayName': 'Nora',
+        'role': 'worker',
+      }) as Map;
+      expect(created['ok'], isTrue);
+
+      // Promote worker -> reviewer without destroying the individual.
+      final updated = await tools['bk.agent.update']!(<String, dynamic>{
+        'agentId': 'nora',
+        'role': 'reviewer',
+      }) as Map;
+      expect(updated['ok'], isTrue);
+      final agent = updated['agent'] as Map;
+      expect(agent['role'], 'reviewer');
+      expect(agent['displayName'], 'Nora'); // untouched field kept
+
+      // Unknown role is rejected, not silently defaulted.
+      final bad = await tools['bk.agent.update']!(<String, dynamic>{
+        'agentId': 'nora',
+        'role': 'boss',
+      }) as Map;
+      expect(bad['ok'], isFalse);
 
       await app.shutdown();
     });

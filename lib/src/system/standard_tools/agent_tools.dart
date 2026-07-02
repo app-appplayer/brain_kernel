@@ -1,5 +1,5 @@
-/// `bk.agent.*` — AgentFacade wrappers (13 tools): list / get / ask /
-/// create / delete / history / assign_skill / assign_profile /
+/// `bk.agent.*` — AgentFacade wrappers (14 tools): list / get / ask /
+/// create / delete / update / history / assign_skill / assign_profile /
 /// assign_philosophy / assign_facts / materialize / route / review.
 /// route + review (spec `platform/12-flowbrain-runtime.md` §5) expose
 /// manager routing + reviewer verdict as tools so workflows / agents can
@@ -112,6 +112,41 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
       return <String, dynamic>{'ok': true};
     } catch (e) {
       return stdErr('deleteAgent failed: $e');
+    }
+  }
+
+  // In-place mutation of a persistent individual — closes the CRUD asymmetry
+  // (create/delete existed, update did not), so a displayName / role / model /
+  // prompt change never requires delete→recreate (which destroys the agent's
+  // owned axis forks and history).
+  Future<Object?> update(Map<String, dynamic> p) async {
+    final id = p['agentId'];
+    if (id is! String || id.isEmpty) return stdErr('agentId required');
+    fb.AgentRole? role;
+    final roleName = p['role'] as String?;
+    if (roleName != null) {
+      role = fb.AgentRole.values.where((r) => r.name == roleName).firstOrNull;
+      if (role == null) return stdErr('unknown role: $roleName');
+    }
+    final modelRaw = p['model'] as Map?;
+    final model = modelRaw != null
+        ? fb.ModelSpec(
+            provider: modelRaw['provider'] as String? ?? 'stub',
+            model: modelRaw['model'] as String? ?? 'stub-1',
+          )
+        : null;
+    try {
+      final agent = await facade().updateAgent(
+        app.scopeIdFor(id),
+        displayName: p['displayName'] as String?,
+        role: role,
+        model: model,
+        systemPrompt: p['systemPrompt'] as String?,
+        tags: (p['tags'] as Map?)?.cast<String, String>(),
+      );
+      return <String, dynamic>{'ok': true, 'agent': agentToJson(agent)};
+    } catch (e) {
+      return stdErr('updateAgent failed: $e');
     }
   }
 
@@ -292,6 +327,7 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     'bk.agent.ask': ask,
     'bk.agent.create': create,
     'bk.agent.delete': delete,
+    'bk.agent.update': update,
     'bk.agent.history': history,
     'bk.agent.assign_skill': assignSkill,
     'bk.agent.assign_profile': assignProfile,

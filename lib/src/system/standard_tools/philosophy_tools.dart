@@ -20,6 +20,36 @@ Map<String, InProcessToolHandler> buildPhilosophyTools(KernelApp app) {
         'active': e.active,
       };
 
+  // Provenance discipline (judgment determinism). An ethos payload may carry an
+  // optional block:
+  //   payload['provenance'] = { 'kind': 'anchor'|'derived'|'workaround',
+  //                             'serves': <principle id/name>,
+  //                             'validWhile': <condition> }
+  // `kind` defaults to 'anchor' when absent, so pre-existing records and the
+  // stock seed (which carry no provenance) stay unconstrained. A `derived` or
+  // `workaround` record is a transient judgment, not an original principle: it
+  // must declare what principle it `serves`, and it may not be stored as
+  // already-active — it becomes active only through an explicit `activate`
+  // (the confirm step), mirroring the fact candidate→confirm lifecycle. The
+  // payload map is preserved as-is by `putEthos`, so this rides the existing
+  // store contract with no core type change.
+  Map<String, dynamic>? provenanceOf(Map<String, dynamic> payload) {
+    final prov = payload['provenance'];
+    return prov is Map ? Map<String, dynamic>.from(prov) : null;
+  }
+
+  String provKind(Map<String, dynamic>? prov) {
+    final k = (prov?['kind'] as String?)?.trim();
+    return (k == null || k.isEmpty) ? 'anchor' : k;
+  }
+
+  bool isDerivedKind(String kind) => kind == 'derived' || kind == 'workaround';
+
+  String? provServes(Map<String, dynamic>? prov) {
+    final s = (prov?['serves'] as String?)?.trim();
+    return (s == null || s.isEmpty) ? null : s;
+  }
+
   Future<Object?> put(Map<String, dynamic> p) async {
     final s = store();
     if (s == null) return stdErr('EthosStorePort not configured');
@@ -42,6 +72,19 @@ Map<String, InProcessToolHandler> buildPhilosophyTools(KernelApp app) {
       // to a crash at intervene/getEthos time.
       mb.Ethos.fromJson(ethosJson);
 
+      // Provenance gate (write side): a derived/workaround ethos must declare
+      // the principle it serves, and is forced inactive — it can only be made
+      // active by an explicit `activate` call (confirm).
+      final prov = provenanceOf(ethosJson);
+      final kind = provKind(prov);
+      final derived = isDerivedKind(kind);
+      if (derived && provServes(prov) == null) {
+        return stdErr(
+          "ethos provenance.kind '$kind' requires a non-empty 'serves' "
+          '(the principle this judgment serves)',
+        );
+      }
+
       final id = isEnvelope ? input['id'] : ethosJson['id'];
       if (id is! String || id.isEmpty) {
         return stdErr('ethos.id (non-empty String) required');
@@ -57,7 +100,9 @@ Map<String, InProcessToolHandler> buildPhilosophyTools(KernelApp app) {
         version: version ?? '1.0.0',
         payload: ethosJson,
         createdAt: DateTime.now(),
-        active: (isEnvelope ? input['active'] : false) as bool? ?? false,
+        active: derived
+            ? false
+            : ((isEnvelope ? input['active'] : false) as bool? ?? false),
       );
       await s.putEthos(record);
       return <String, dynamic>{'ok': true, 'id': record.id};
@@ -106,6 +151,20 @@ Map<String, InProcessToolHandler> buildPhilosophyTools(KernelApp app) {
     if (id is! String || id.isEmpty) return stdErr('id required');
     final scopedId = app.scopeIdFor(id);
     try {
+      // Confirm step: promoting a derived/workaround ethos to the active
+      // principle requires the `serves` link — this keeps a transient judgment
+      // from silently becoming the governing principle. Anchors activate freely.
+      final existing = await s.getEthos(scopedId);
+      if (existing != null) {
+        final prov = provenanceOf(existing.payload);
+        final kind = provKind(prov);
+        if (isDerivedKind(kind) && provServes(prov) == null) {
+          return stdErr(
+            "cannot activate ethos '$id': provenance.kind '$kind' requires a "
+            "'serves' link",
+          );
+        }
+      }
       await s.activateEthos(scopedId);
       return <String, dynamic>{'ok': true, 'activeId': scopedId};
     } catch (e) {

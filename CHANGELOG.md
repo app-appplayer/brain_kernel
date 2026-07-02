@@ -1,3 +1,12 @@
+## 0.1.6 - 2026-07-02 - bk.philosophy provenance discipline + bk.agent.update
+
+### Added
+- **`bk.agent.update` standard tool (48 tools).** In-place mutation of a persistent agent — `agentId` plus any of `displayName` / `role` / `model` / `systemPrompt` / `tags`. Closes the CRUD asymmetry in the `bk.agent.*` surface (create/delete existed, update did not), so changing an agent's orchestration role or model through the kernel tool surface no longer requires delete→recreate — which destroys the individual's owned axis forks and history, contradicting the persistent-roster principle. An unknown `role` value is rejected (not silently defaulted). Requires `flowbrain_core ^0.1.7` (the `role`-accepting update seam) — floor bumped. Test: `standard_tools_test.dart` (in-place promote persists · untouched fields kept · unknown role rejected). 223 PASS.
+- **`bk.philosophy.put` / `bk.philosophy.activate` enforce a provenance lifecycle.** An ethos payload may now carry an optional `provenance` block — `payload['provenance'] = { 'kind': 'anchor'|'derived'|'workaround', 'serves': <principle id>, 'validWhile': <condition> }`. A `derived` or `workaround` ethos is a transient judgment, not an original principle: it must declare the principle it `serves`, and it is forced **inactive** on `put` — it becomes the active principle only through an explicit `activate` (the confirm step), mirroring the fact candidate→confirm lifecycle. This keeps a derived judgment from silently being stored or activated as if it were a defining principle. Rides the existing `EthosStorePort` contract (payload preserved as-is) — **no core type change** in `mcp_bundle`. Tests: `philosophy_authoring_test.dart` (anchor unconstrained · derived-without-serves rejected · derived forced inactive + provenance round-trip · workaround confirmed via activate). 222 PASS.
+
+### Backward compatibility
+- Fully additive. `kind` defaults to `anchor` when absent, so pre-existing ethos records and the stock seed (which carry no `provenance`) are unconstrained and behave exactly as before. Floors unchanged.
+
 ## 0.1.5 - 2026-06-30 - KvStoragePortAdapter.keys(prefix:) string-prefix contract fix
 
 ### Fixed
