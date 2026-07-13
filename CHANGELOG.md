@@ -1,3 +1,11 @@
+## 0.1.7 - 2026-07-12 - ExtensionTransportConnect seam capability (additive)
+
+### Added
+- **`ExtensionTransportConnect` capability interface + `connectExtension` helper** (`package:brain_kernel/mcp_host.dart`). Codifies the extension-transport injection seam standard (`specs/platform/08-extension.md` §4 "Standard 3 Layers"). The seam `connectWith({ id, transport })` — how a host opens an outbound MCP connection over a transport it built itself (serial / usb / ble / tcp / ws via `mcp_bridge`, or the hub relay ws via `gateway_node`'s `HubConsumerTransport`; `15-hub-channel.md` §8) — previously lived only on the concrete `McpClientKernelHost`. The abstract `KernelClientHost` (the type `KernelApp.clientHost` exposes) surfaces only `connect({ transport: KernelTransportKind })` for the kernel-buildable stdio / Streamable HTTP / SSE transports, so a host had to hold a concrete client-host reference to reach the seam. `McpClientKernelHost` now also `implements ExtensionTransportConnect`, and hosts reach the seam off the abstract client host via the canonical helper `connectExtension(clientHost, { id, transport })` — it probes `ExtensionTransportConnect`, does the explicit cast (the interface is unrelated to `KernelClientHost?`, so `is` does not promote the variable — a footgun sealed in one place), injects, or throws a `StateError`. Both exported from the `mcp_host.dart` sub-barrel (they reference `mcp_client`'s `ClientTransport`, so they stay out of the library-agnostic main barrel). `KernelClientHost` itself is unchanged (cascade 0). Test: `client_tools_test.dart` (probe off the abstract type; non-capable / null host throws). The host-facing surface (the `mcp.connect_extension` tool) lives in the `recipes/extension_transport/` recipe, not the kernel (it carries an mcp_bridge FFI dependency). 227 PASS.
+
+### Backward compatibility
+- Fully additive. `KernelClientHost` is **unchanged** — existing implementers are untouched (no new abstract member to satisfy). The new capability is a separate interface a client host opts into. Floors unchanged.
+
 ## 0.1.6 - 2026-07-02 - bk.philosophy provenance discipline + bk.agent.update
 
 ### Added

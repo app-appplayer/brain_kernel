@@ -4,9 +4,13 @@
 /// (general-tool path), never the `bk.*` facade surface.
 library;
 
+import 'dart:async' show Completer;
 import 'dart:convert' show jsonDecode;
 
 import 'package:brain_kernel/brain_kernel.dart';
+import 'package:brain_kernel/mcp_host.dart'
+    show ExtensionTransportConnect, McpClientKernelHost, connectExtension;
+import 'package:mcp_client/mcp_client.dart' show ClientTransport;
 import 'package:test/test.dart';
 
 void main() {
@@ -146,6 +150,49 @@ void main() {
       });
     });
   });
+
+  group('ExtensionTransportConnect (injected-transport seam)', () {
+    test('reference client host satisfies the capability off the abstract '
+        'KernelClientHost — no concrete downcast needed', () {
+      // The seam a host actually holds: an abstract KernelClientHost from
+      // KernelApp.boot(clientHost: ...). The probe must succeed against the
+      // reference impl so hosts inject a transport without a concrete ref.
+      final KernelClientHost clientHost = McpClientKernelHost();
+      expect(clientHost, isA<ExtensionTransportConnect>());
+    });
+
+    test('a client host that cannot inject a transport is not the '
+        'capability — the probe fails closed', () {
+      final KernelClientHost clientHost = _FakeHost();
+      expect(clientHost, isNot(isA<ExtensionTransportConnect>()));
+    });
+
+    test('connectExtension helper throws for a null client host', () {
+      expect(
+        connectExtension(null, id: 'x', transport: _StubTransport()),
+        throwsStateError,
+      );
+    });
+
+    test('connectExtension helper throws for a non-capable client host', () {
+      expect(
+        connectExtension(_FakeHost(), id: 'x', transport: _StubTransport()),
+        throwsStateError,
+      );
+    });
+  });
+}
+
+/// Minimal `ClientTransport` — never opened; the guard rejects before use.
+class _StubTransport implements ClientTransport {
+  @override
+  Stream<dynamic> get onMessage => const Stream.empty();
+  @override
+  Future<void> get onClose => Completer<void>().future;
+  @override
+  void send(dynamic message) {}
+  @override
+  void close() {}
 }
 
 class _FakeHost implements KernelClientHost {

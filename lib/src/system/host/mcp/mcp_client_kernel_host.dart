@@ -10,8 +10,10 @@ import 'package:mcp_client/mcp_client.dart' as cli;
 
 import '../kernel_client_host.dart';
 import '../kernel_envelope.dart';
+import 'extension_transport_connect.dart';
 
-class McpClientKernelHost implements KernelClientHost {
+class McpClientKernelHost
+    implements KernelClientHost, ExtensionTransportConnect {
   McpClientKernelHost({
     this.name = 'brain_kernel',
     this.version = '0.1.0',
@@ -61,6 +63,10 @@ class McpClientKernelHost implements KernelClientHost {
   /// libraries — the host owns that (e.g. mcp_bridge's FFI transports). This
   /// is the injection seam described in `specs/platform/08-extension.md` §4:
   /// the seam lives in the kernel (pure, no FFI), the impl in the host.
+  ///
+  /// Formalized by the [ExtensionTransportConnect] capability interface so
+  /// hosts can probe the seam off the abstract [KernelClientHost].
+  @override
   Future<KernelClientConnection> connectWith({
     required String id,
     required cli.ClientTransport transport,
