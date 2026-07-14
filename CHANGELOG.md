@@ -1,3 +1,11 @@
+## 0.1.8 - 2026-07-14
+
+### Fixed
+- `McpClientKernelHost` streamableHttp/sse connect now sends
+  `options.accessToken` as `Authorization: Bearer` (+ `options.headers`
+  passthrough) — the token was dropped, failing authenticated
+  service connects.
+
 ## 0.1.7 - 2026-07-12 - ExtensionTransportConnect seam capability (additive)
 
 ### Added

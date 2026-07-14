@@ -112,13 +112,36 @@ class McpClientKernelHost
         if (endpoint == null) {
           throw ArgumentError('streamableHttp transport requires endpoint');
         }
-        return cli.StreamableHttpClientTransport.create(baseUrl: endpoint);
+        return cli.StreamableHttpClientTransport.create(
+          baseUrl: endpoint,
+          headers: _credentialHeaders(options),
+        );
       case KernelTransportKind.sse:
         if (endpoint == null) {
           throw ArgumentError('sse transport requires endpoint');
         }
-        return cli.SseClientTransport.create(serverUrl: endpoint);
+        return cli.SseClientTransport.create(
+          serverUrl: endpoint,
+          headers: _credentialHeaders(options),
+        );
     }
+  }
+
+  /// Credential wiring for network transports. `options.accessToken` rides
+  /// the MCP-standard `Authorization: Bearer` header; `options.headers`
+  /// passes through verbatim for servers with a bespoke scheme, and an
+  /// explicit header wins over the derived one. Dropping the token here was
+  /// the marketplace service-connect `-32001 Authentication required`
+  /// (same defect/fix shape as appplayer core `transport_factory`).
+  Map<String, String>? _credentialHeaders(Map<String, dynamic> options) {
+    final accessToken = options['accessToken'] as String?;
+    final extra =
+        (options['headers'] as Map<dynamic, dynamic>?)?.cast<String, String>();
+    final headers = <String, String>{
+      if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      ...?extra,
+    };
+    return headers.isEmpty ? null : headers;
   }
 
   @override
