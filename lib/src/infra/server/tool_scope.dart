@@ -1,8 +1,6 @@
 /// Tool visibility scope — drives which subsets of registered tools are
 /// actually exposed on the MCP transport at `start` time. Hosts decide
 /// the visibility set per launch (production / dev / debug runs).
-///
-/// FR-SRV-006 — defined in SRS §2.6.
 library;
 
 enum ToolScope {

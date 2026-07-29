@@ -1,5 +1,5 @@
 /// Pick which MCP transport to bind based on user override or stdin
-/// attachment heuristics (DDD-20 §3).
+/// attachment heuristics.
 library;
 
 import 'dart:io';

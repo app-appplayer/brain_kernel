@@ -1,7 +1,7 @@
 /// `bk.agent.*` — AgentFacade wrappers (14 tools): list / get / ask /
 /// create / delete / update / history / assign_skill / assign_profile /
 /// assign_philosophy / assign_facts / materialize / route / review.
-/// route + review (spec `platform/12-flowbrain-runtime.md` §5) expose
+/// route + review expose
 /// manager routing + reviewer verdict as tools so workflows / agents can
 /// drive rule-based agent→agent handoff.
 library;
@@ -261,7 +261,7 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     }
   }
 
-  // §5 (orchestration): manager routes a request to the best worker.
+  // Orchestration: manager routes a request to the best worker.
   Future<Object?> route(Map<String, dynamic> p) async {
     final managerId = p['managerId'];
     final request = p['request'];
@@ -290,7 +290,7 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     }
   }
 
-  // §5 (orchestration): reviewer verdict over a target agent's reply.
+  // Orchestration: reviewer verdict over a target agent's reply.
   Future<Object?> review(Map<String, dynamic> p) async {
     final reviewerId = p['reviewerId'];
     final targetAgentId = p['targetAgentId'];

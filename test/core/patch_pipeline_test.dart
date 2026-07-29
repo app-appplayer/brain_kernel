@@ -51,6 +51,47 @@ void main() {
     expect(stack.canRedo, isFalse);
   });
 
+  test('PatchApplied carries the real before/after hashes (not empty)',
+      () async {
+    // Regression: the pipeline used to hardcode beforeHash/afterHash to ''
+    // instead of forwarding the hashes applyAtomic already computes for the
+    // change stream. A consumer reading the result inline (rather than
+    // correlating the `changes` stream) got silent empty strings.
+    final result = await pipeline.apply(
+      JsonPatchSet([
+        const PatchOp(op: 'replace', path: '/manifest/name', value: 'Renamed'),
+      ]),
+      originator: const UserOriginator(),
+    );
+
+    final applied = result as PatchApplied;
+    expect(applied.beforeHash, isNotEmpty);
+    expect(applied.afterHash, isNotEmpty);
+    // The mutation changed the bundle, so the hashes must differ.
+    expect(applied.afterHash, isNot(applied.beforeHash));
+    // Sanity: canonical sha256 hex digest length.
+    expect(applied.beforeHash, hasLength(64));
+    expect(applied.afterHash, hasLength(64));
+  });
+
+  test('undo/redo PatchApplied also carry real hashes', () async {
+    await pipeline.apply(
+      JsonPatchSet([
+        const PatchOp(op: 'replace', path: '/manifest/name', value: 'Renamed'),
+      ]),
+      originator: const UserOriginator(),
+    );
+    final undone = await pipeline.undo() as PatchApplied;
+    expect(undone.beforeHash, isNotEmpty);
+    expect(undone.afterHash, isNotEmpty);
+    expect(undone.afterHash, isNot(undone.beforeHash));
+
+    final redone = await pipeline.redo() as PatchApplied;
+    expect(redone.beforeHash, isNotEmpty);
+    expect(redone.afterHash, isNotEmpty);
+    expect(redone.afterHash, isNot(redone.beforeHash));
+  });
+
   test('undo reverts the change; redo re-applies it', () async {
     await pipeline.apply(
       JsonPatchSet([

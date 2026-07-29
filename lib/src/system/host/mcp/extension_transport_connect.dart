@@ -4,10 +4,10 @@
 ///
 /// [KernelClientHost.connect] only drives the transports the kernel can
 /// build itself (`stdio` / `streamableHttp` / `sse`, all FFI-free). The
-/// extension seam described in `specs/platform/08-extension.md` §4 covers
+/// extension seam covers
 /// the transports whose platform libraries live *outside* the kernel —
 /// serial / usb / ble / tcp / ws (via `mcp_bridge`) and the hub relay ws
-/// (via `gateway_node`'s `HubConsumerTransport`, spec 15 §8). The host
+/// (via `gateway_node`'s `HubConsumerTransport`). The host
 /// builds the `ClientTransport` and injects it here; the kernel never
 /// depends on the transport's platform libraries.
 ///
@@ -27,7 +27,7 @@
 /// and the `is` probe is `false`.
 library;
 
-import 'package:mcp_client/mcp_client.dart' show ClientTransport;
+import 'package:mcp_client/mcp_client.dart' show Client, ClientTransport;
 
 import '../kernel_client_host.dart';
 
@@ -41,6 +41,24 @@ abstract class ExtensionTransportConnect {
   Future<KernelClientConnection> connectWith({
     required String id,
     required ClientTransport transport,
+  });
+
+  /// Adopt a client the HOST already holds, under [id].
+  ///
+  /// One device, one connection. A host that opens a device for its own
+  /// screens and then also names it as a composition origin must not dial it
+  /// twice: many embedded boards serve a single peer, so the second dial is
+  /// refused and the user sees a device that "sometimes will not open". Even
+  /// where a second link is allowed it splits subscriptions and health
+  /// tracking across two links to the same device.
+  ///
+  /// The adopted connection does NOT own [client] — closing it deregisters
+  /// only. Whoever opened the client keeps the right to end it, which for a
+  /// user-facing host is an explicit action (an app's Close), not a side
+  /// effect of leaving a screen.
+  Future<KernelClientConnection> adoptClient({
+    required String id,
+    required Client client,
   });
 }
 

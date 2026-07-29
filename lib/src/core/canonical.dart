@@ -1,6 +1,6 @@
 /// In-memory representation of a `.kbproj/app.mbd/` plus its draft mirror.
 ///
-/// Implements MOD-CORE-002 (SDD §2.1 / DDD-03). Holds the bundle as a raw
+/// Holds the bundle as a raw
 /// JSON map (the authoritative form — round-trips reserved-folder
 /// content) and exposes a typed [McpBundle] projection on demand. All
 /// disk I/O routes through a [CanonicalStoragePort]; the default
@@ -44,7 +44,7 @@ class CanonicalChange {
 }
 
 /// In-memory canonical with draft mirror. Single-thread (Flutter UI tick)
-/// — concurrent access is queued by callers (see DDD-03 §9).
+/// — concurrent access is queued by callers.
 class Canonical {
   Canonical._({
     required Map<String, dynamic> bundleJson,
@@ -138,7 +138,12 @@ class Canonical {
   /// storage port, and broadcasts a `patch` change. The actual diff /
   /// inverse calculation happens upstream in `PatchPipeline` — this
   /// method is the canonical mutation primitive.
-  Future<void> applyAtomic(
+  ///
+  /// Returns the `(beforeHash, afterHash)` it computed for the change so
+  /// callers can carry them inline (e.g. `PatchPipeline` forwarding them
+  /// into `PatchApplied`) without having to correlate the `changes` stream
+  /// event — the same values are also broadcast on that stream.
+  Future<({String beforeHash, String afterHash})> applyAtomic(
     Map<String, dynamic> next, {
     required List<String> changedPointers,
     Object? originator,
@@ -165,13 +170,15 @@ class Canonical {
       timestamp: DateTime.now().toUtc(),
       originator: originator,
     ));
+
+    return (beforeHash: beforeHash, afterHash: afterHash);
   }
 
   /// Convenience overload for callers that already hold an [McpBundle].
   /// Routes through [applyAtomic] after `next.toJson()` — domains that
   /// carry data outside mcp_bundle's typed schema should call
   /// [applyAtomic] directly with the raw JSON form to avoid loss.
-  Future<void> applyAtomicBundle(
+  Future<({String beforeHash, String afterHash})> applyAtomicBundle(
     McpBundle next, {
     required List<String> changedPointers,
     Object? originator,

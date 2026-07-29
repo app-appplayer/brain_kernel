@@ -121,7 +121,7 @@ void main() {
       expect((result.content.first as KernelTextContent).text, 'echoed:hi');
     });
 
-    // ── §6 destructive gate ────────────────────────────────────────────
+    // ── destructive gate ───────────────────────────────────────────────
 
     HostToolRegistry registryWith(ConfirmDestructive? confirm) =>
         HostToolRegistry(
@@ -131,7 +131,7 @@ void main() {
           confirmDestructive: confirm,
         );
 
-    test('destructive tool blocked when no confirm callback wired (§6)',
+    test('destructive tool blocked when no confirm callback wired',
         () async {
       var ran = false;
       registry.registerExposed(
@@ -154,7 +154,7 @@ void main() {
       expect(ran, isFalse);
     });
 
-    test('destructive tool blocked when the human declines (§6)', () async {
+    test('destructive tool blocked when the human declines', () async {
       var ran = false;
       registryWith((_, __) async => false).registerExposed(
         bundleId: 'ops',
@@ -174,7 +174,7 @@ void main() {
       expect(ran, isFalse);
     });
 
-    test('destructive tool runs when the human approves (§6)', () async {
+    test('destructive tool runs when the human approves', () async {
       var ran = false;
       registryWith((_, __) async => true).registerExposed(
         bundleId: 'ops',

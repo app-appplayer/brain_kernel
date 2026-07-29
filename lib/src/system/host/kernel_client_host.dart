@@ -36,6 +36,22 @@ abstract class KernelClientConnection {
 
   Future<List<KernelResourceDescriptor>> listResources();
 
+  /// Subscribe to `notifications/resources/updated` for [uri].
+  ///
+  /// Needed for a UI that shows live device values. Without it a composed
+  /// screen can read a resource once but never track it, so a "live" reading
+  /// renders empty forever and nothing says why.
+  Future<void> subscribeResource(String uri);
+
+  Future<void> unsubscribeResource(String uri);
+
+  /// Fires with the uri of a resource the server reports as changed.
+  ///
+  /// One broadcast stream per connection: several views may watch the same
+  /// device, and a single-subscription stream would give the value to whichever
+  /// one listened first.
+  Stream<String> get resourceUpdates;
+
   Future<void> close();
 }
 

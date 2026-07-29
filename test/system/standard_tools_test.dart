@@ -25,7 +25,7 @@ void main() {
     test('returns the full 48-tool map', () {
       final tools = standardTools(app);
       // 9 fact + 3 skill + 4 profile + 6 philosophy + 10 ops + 14 agent
-      // + 2 knowledge = 48. (agent: 12 + route + review, spec 12 §5;
+      // + 2 knowledge = 48. (agent: 12 + route + review;
       // update closes the create/delete CRUD asymmetry.)
       expect(tools.length, 48);
     });
@@ -144,7 +144,7 @@ void main() {
 
     test('activate exposes the bundle document at bundle://manifest.json',
         () async {
-      // specs/mcp_serving/spec/1.0 — a kernel-endpoint server exposes the
+      // MCP Serving 1.0 — a kernel-endpoint server exposes the
       // activated bundle's document so a remote client can reconstruct it.
       final app = await KernelApp.boot(
         workspaceId: 't',

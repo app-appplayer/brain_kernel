@@ -2,7 +2,7 @@
 /// bundle activation through the unified session / dispatch / resource
 /// model.
 ///
-/// Layer mapping (Knowledge-operations §14):
+/// Layer mapping:
 ///
 /// ```
 ///   host chrome

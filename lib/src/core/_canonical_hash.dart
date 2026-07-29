@@ -1,8 +1,8 @@
 /// Deterministic SHA-256 hash of a bundle's canonical JSON.
 ///
 /// Used by [Canonical] to compare committed disk state against the
-/// in-memory draft mirror (DDD-03 §3) and by the patch pipeline's
-/// before/after audit row (DDD-04 §6).
+/// in-memory draft mirror and by the patch pipeline's
+/// before/after audit row.
 library;
 
 import 'dart:convert';

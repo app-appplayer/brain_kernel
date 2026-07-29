@@ -3,7 +3,7 @@
 /// Subscribes to a [Canonical]'s change stream and appends one row per
 /// `kind: patch` event. Other change kinds (`open` / `saveAs` / `revert`)
 /// are not recorded — they carry no diff a downstream auditor could
-/// replay (DDD-04 §6).
+/// replay.
 library;
 
 import 'dart:async';

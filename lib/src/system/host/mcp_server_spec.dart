@@ -11,8 +11,8 @@
 ///
 /// Hosts that never expose an external transport (in-process default)
 /// publish `null` from `KernelApp.hostMcpServerSpec`. Hosts that bind
-/// a transport surface this spec so per-agent scoping (see
-/// `specs/platform/10-agent-scoping.md`) carries through the mode A
+/// a transport surface this spec so per-agent scoping
+/// carries through the mode A
 /// path (Claude Code CLI absorbing the host catalog via mcp-config).
 library;
 

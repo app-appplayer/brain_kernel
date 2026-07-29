@@ -9,7 +9,7 @@
 /// runtime) never sees a session — it dispatches via the host's
 /// bridge helpers and the bridge resolves caller via the Zone.
 ///
-/// Knowledge-operations §14.4 — lifecycle: open → runScoped (Zone fork
+/// Lifecycle: open → runScoped (Zone fork
 /// for each dispatch entry) → attach UI mount / subscription → close
 /// (all attached handles cleaned in one pass).
 library;

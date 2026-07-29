@@ -42,8 +42,8 @@ typedef DispatcherAttach = void Function(
 typedef DispatcherDetach = void Function(String exposedName);
 
 /// Host-supplied human-confirm gate for destructive (irreversible) tools
-/// — git push, mail, settlement, external publish, etc. (spec
-/// `platform/12-flowbrain-runtime.md` §6). Returns true to allow the call,
+/// — git push, mail, settlement, external publish, etc.
+/// Returns true to allow the call,
 /// false to block. The core has no UI; the host decides how to obtain
 /// approval. A tool registered `destructive: true` with no callback wired is
 /// blocked (deny-by-default).
@@ -61,7 +61,7 @@ class HostToolRegistry {
   });
 
   /// Optional human-confirm gate for tools registered `destructive: true`
-  /// (§6). When null, destructive tools are blocked (deny-by-default).
+  /// When null, destructive tools are blocked (deny-by-default).
   final ConfirmDestructive? confirmDestructive;
 
   /// Endpoint that receives the same handler (mirrored for external
@@ -89,7 +89,7 @@ class HostToolRegistry {
   /// [destructive] marks an irreversible tool (git push / mail / settlement
   /// / external publish). Such tools are gated through [confirmDestructive]
   /// before running — blocked when the human declines or no callback is
-  /// wired (§6). Default false (existing tools unaffected).
+  /// wired. Default false (existing tools unaffected).
   String registerExposed({
     required String bundleId,
     required String rawName,
@@ -117,7 +117,7 @@ class HostToolRegistry {
 
   /// Wrap a destructive tool's handler so it requires human confirmation
   /// before running. Blocked (not run) when [confirmDestructive] is null
-  /// (deny-by-default) or the human declines (§6).
+  /// (deny-by-default) or the human declines.
   KernelToolHandler _guardDestructive(
       String toolName, KernelToolHandler handler) {
     return (args) async {

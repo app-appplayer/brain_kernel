@@ -2,7 +2,7 @@
 ///
 /// Runs a list of "gold" questions against the current bundle's BM25
 /// index and reports which expected chunks landed in the top-K. Used by
-/// `AssetValidator.validateBehavioral` (DDD-05 §5).
+/// `AssetValidator.validateBehavioral`.
 library;
 
 import 'package:mcp_bundle/mcp_bundle.dart';

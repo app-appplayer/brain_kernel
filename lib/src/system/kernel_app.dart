@@ -271,8 +271,7 @@ class KernelApp {
   /// overridden by [explicitAllowlist] when the manifest's
   /// `agents[i].tools` field is set.
   ///
-  /// See `specs/platform/10-agent-scoping.md` for the sourcing thesis
-  /// — agents that receive the whole catalog collapse back into a
+  /// Agents that receive the whole catalog collapse back into a
   /// monolithic LLM, so this helper enforces the role-default
   /// boundary at the helper layer (hosts may still call it with a
   /// custom allowlist).
@@ -305,7 +304,6 @@ class KernelApp {
           // siblings, inspect knowledge, surface host inventory); the
           // actual mutation / dispatch lives on the workers. Returning
           // the whole catalog here would (1) match the anti-pattern
-          // spelled out in `specs/platform/10-agent-scoping.md`
           // (manager = monolithic LLM), (2) blow the token budget for
           // any non-trivial host (vibe_studio's full surface ≈ 578
           // tools), and (3) overwhelm the in-CLI LLM's tool-selection

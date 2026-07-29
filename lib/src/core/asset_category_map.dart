@@ -1,7 +1,5 @@
 /// Maps the six [AssetCategory] values to the `mcp_bundle` section that
 /// owns them, plus the JSON-Pointer prefix used by the patch pipeline.
-///
-/// Implements MOD-CORE-005 (SDD §2.1 / DDD-01 §2.1).
 library;
 
 import 'package:mcp_bundle/mcp_bundle.dart';

@@ -111,7 +111,7 @@ void main() {
   test(
       'MCP Serving — bundle://manifest.json carries the document + reconstructs',
       () async {
-    // specs/mcp_serving/spec/1.0 — the server registers the whole bundle
+    // MCP Serving 1.0 — the server registers the whole bundle
     // document at the well-known `bundle://manifest.json` resource; a client
     // reads it and reconstructs the same bundle (equivalence rule).
     final bridge = BundleSessionBridge();

@@ -2,8 +2,6 @@
 /// `GoldQuestionRunner`. Operates over the chunks held by a bundle's
 /// [KnowledgeSection]; other assets (skill descriptions, philosophy
 /// statements, ...) are out of scope for this first cut.
-///
-/// Implements the search surface described in DDD-14 §2.
 library;
 
 import 'dart:math' as math;

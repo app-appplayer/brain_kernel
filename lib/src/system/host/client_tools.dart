@@ -217,6 +217,42 @@ List<_ClientTool> _buildClientTools(KernelClientHost host) {
       }),
     ),
     _ClientTool(
+      verb: 'subscribe_resource',
+      description: 'Watch a resource on the connected server. Updates arrive '
+          'as `notifications/resources/updated` and are delivered to the host '
+          'through the connection\'s update stream.',
+      inputSchema: const <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'id': <String, dynamic>{'type': 'string'},
+          'uri': <String, dynamic>{'type': 'string'},
+        },
+        'required': <String>['id', 'uri'],
+      },
+      handler: _guard((args) async {
+        await conn(args['id'])
+            .subscribeResource(_requireString(args['uri'], 'uri'));
+        return <String, dynamic>{'ok': true};
+      }),
+    ),
+    _ClientTool(
+      verb: 'unsubscribe_resource',
+      description: 'Stop watching a resource on the connected server.',
+      inputSchema: const <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'id': <String, dynamic>{'type': 'string'},
+          'uri': <String, dynamic>{'type': 'string'},
+        },
+        'required': <String>['id', 'uri'],
+      },
+      handler: _guard((args) async {
+        await conn(args['id'])
+            .unsubscribeResource(_requireString(args['uri'], 'uri'));
+        return <String, dynamic>{'ok': true};
+      }),
+    ),
+    _ClientTool(
       verb: 'disconnect',
       description: 'Close a connection the app opened.',
       inputSchema: _idOnlySchema,

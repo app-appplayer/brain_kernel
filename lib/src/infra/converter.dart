@@ -1,6 +1,6 @@
-/// Build / export dispatcher for `.kbproj/` canonicals (MOD-INFRA-005).
+/// Build / export dispatcher for `.kbproj/` canonicals.
 ///
-/// Drives DDD-16's four targets — `mbd`, `mcpb`, `embedded`,
+/// Drives the four build targets — `mbd`, `mcpb`, `embedded`,
 /// `consumerPack` — from a single `BuildRequest`. This first-pass
 /// implementation wires `mbd` and `mcpb` end-to-end and stubs the other
 /// two with explicit warnings so downstream callers (CLI Build button,

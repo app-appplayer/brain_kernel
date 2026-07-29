@@ -1,4 +1,4 @@
-/// LLM-backed asset extractor (MOD-FEAT-004 / DDD-11).
+/// LLM-backed asset extractor.
 ///
 /// Translates a user intent ("derive personas from these chunks", "find
 /// duplicate facts", …) into a list of [AssetProposal]s. The first cut

@@ -1,3 +1,27 @@
+## 0.2.0 - 2026-07-28
+
+### Changed
+- Internal dependency floors moved to the current releases: `mcp_client ^2.1.0`, `mcp_server ^2.1.1`. The server floor matters beyond hygiene — 2.1.1 fixes in-flight requests being keyed by the bare JSON-RPC id, which let two sessions using the same id (the first id a client hands out is `2`) overwrite each other's pending response. Leaving the floor at `^2.0.0` would resolve against a release that still loses responses under concurrent sessions.
+
+### Added
+- **`SharedResourceSubscriptions`** — reference-counted `resources/subscribe` over a client several consumers share. A device subscription belongs to the LINK: the server knows only "subscribed" or not. Once one connection per device is shared, a device's own screen and a composed tile naming the same device land on one subscription, and the first to release it stopped the other's stream — a tile that streamed until the device's own screen was visited and closed, then froze and moved one step per manual Subscribe. The wire call now happens on 0 → 1 and on the return to 0; a failed subscribe leaves no count behind.
+- **`ExtensionTransportConnect.adoptClient({id, client})`** — register a client the HOST already holds under an id, instead of dialling the device a second time. One device, one connection: many embedded boards serve a single peer, so a host that opened a device for its own screens and then named it as a composition origin got the second dial refused, and the user saw a device that "sometimes will not open". Even where a second link is allowed it splits subscriptions and health tracking across two links to the same device. An adopted connection does NOT own the client — closing it deregisters only, because ending a device connection is the user's explicit action, not a side effect of leaving a screen.
+- `mcp.subscribe_resource` / `mcp.unsubscribe_resource`, and the
+  `KernelClientConnection.subscribeResource` / `unsubscribeResource` /
+  `resourceUpdates` they drive. The client surface could read a resource once
+  but not track it, so a UI showing a live device value had no way to get one —
+  it rendered the reading's label and never a number, which looks like a layout
+  bug rather than a missing capability. First consumer: MCP UI DSL v1.4
+  composition, where one screen watches several devices at once.
+- `resourceUpdates` is a broadcast stream. Several views may watch the same
+  device, and a single-subscription stream would hand updates to whichever
+  listened first and leave the rest empty.
+
+### Breaking
+- `KernelClientConnection` gains three abstract members. Implementors outside
+  this package must add them; the reference implementation and the in-repo
+  fakes are updated. Additive for callers.
+
 ## 0.1.8 - 2026-07-14
 
 ### Fixed
@@ -9,7 +33,7 @@
 ## 0.1.7 - 2026-07-12 - ExtensionTransportConnect seam capability (additive)
 
 ### Added
-- **`ExtensionTransportConnect` capability interface + `connectExtension` helper** (`package:brain_kernel/mcp_host.dart`). Codifies the extension-transport injection seam standard (`specs/platform/08-extension.md` §4 "Standard 3 Layers"). The seam `connectWith({ id, transport })` — how a host opens an outbound MCP connection over a transport it built itself (serial / usb / ble / tcp / ws via `mcp_bridge`, or the hub relay ws via `gateway_node`'s `HubConsumerTransport`; `15-hub-channel.md` §8) — previously lived only on the concrete `McpClientKernelHost`. The abstract `KernelClientHost` (the type `KernelApp.clientHost` exposes) surfaces only `connect({ transport: KernelTransportKind })` for the kernel-buildable stdio / Streamable HTTP / SSE transports, so a host had to hold a concrete client-host reference to reach the seam. `McpClientKernelHost` now also `implements ExtensionTransportConnect`, and hosts reach the seam off the abstract client host via the canonical helper `connectExtension(clientHost, { id, transport })` — it probes `ExtensionTransportConnect`, does the explicit cast (the interface is unrelated to `KernelClientHost?`, so `is` does not promote the variable — a footgun sealed in one place), injects, or throws a `StateError`. Both exported from the `mcp_host.dart` sub-barrel (they reference `mcp_client`'s `ClientTransport`, so they stay out of the library-agnostic main barrel). `KernelClientHost` itself is unchanged (cascade 0). Test: `client_tools_test.dart` (probe off the abstract type; non-capable / null host throws). The host-facing surface (the `mcp.connect_extension` tool) lives in the `recipes/extension_transport/` recipe, not the kernel (it carries an mcp_bridge FFI dependency). 227 PASS.
+- **`ExtensionTransportConnect` capability interface + `connectExtension` helper** (`package:brain_kernel/mcp_host.dart`). Codifies the extension-transport injection seam standard. The seam `connectWith({ id, transport })` — how a host opens an outbound MCP connection over a transport it built itself (serial / usb / ble / tcp / ws via `mcp_bridge`, or the hub relay ws via `gateway_node`'s `HubConsumerTransport`) — previously lived only on the concrete `McpClientKernelHost`. The abstract `KernelClientHost` (the type `KernelApp.clientHost` exposes) surfaces only `connect({ transport: KernelTransportKind })` for the kernel-buildable stdio / Streamable HTTP / SSE transports, so a host had to hold a concrete client-host reference to reach the seam. `McpClientKernelHost` now also `implements ExtensionTransportConnect`, and hosts reach the seam off the abstract client host via the canonical helper `connectExtension(clientHost, { id, transport })` — it probes `ExtensionTransportConnect`, does the explicit cast (the interface is unrelated to `KernelClientHost?`, so `is` does not promote the variable — a footgun sealed in one place), injects, or throws a `StateError`. Both exported from the `mcp_host.dart` sub-barrel (they reference `mcp_client`'s `ClientTransport`, so they stay out of the library-agnostic main barrel). `KernelClientHost` itself is unchanged (cascade 0). Test: `client_tools_test.dart` (probe off the abstract type; non-capable / null host throws). The host-facing surface (the `mcp.connect_extension` tool) lives in the `recipes/extension_transport/` recipe, not the kernel (it carries an mcp_bridge FFI dependency). 227 PASS.
 
 ### Backward compatibility
 - Fully additive. `KernelClientHost` is **unchanged** — existing implementers are untouched (no new abstract member to satisfy). The new capability is a separate interface a client host opts into. Floors unchanged.
@@ -39,17 +63,17 @@
 ### Backward compatibility
 - Fully additive. The `boot` path and the `tool dispatch not wired` diagnostic are unchanged. `BundleActivation` callers that don't pass `callTool` see no behavior change.
 
-## 0.1.3 - 2026-06-23 - FlowBrain orchestration tools (route/review) + destructive-action gate (spec 12 §5·§6)
+## 0.1.3 - 2026-06-23 - FlowBrain orchestration tools (route/review) + destructive-action gate
 
 ### Added
-- **§5** — `bk.agent.route` + `bk.agent.review` standard tools (agent_tools: 11 → 13) — expose the AgentFacade's manager-routing + reviewer-verdict as MCP tools so workflows / agents can drive rule-based agent→agent handoff (spec `platform/12-flowbrain-runtime.md` §5). `route{managerId, request, candidateAgentIds?}` → `{targetAgentId, confidence, reason}`; `review{reviewerId, targetAgentId, content}` → `{verdict, severity, comments}`. standardTools map: 45 → 47.
-- **§6** — `HostToolRegistry` destructive-action gate: `registerExposed(destructive: true)` + optional `confirmDestructive` host callback (ctor). Destructive tools (git push / mail / settlement / external publish) are gated through the callback before running — **blocked when the human declines or no callback is wired (deny-by-default)** (spec §6). `destructive` defaults false → existing tools unaffected. The confirm UI is host-supplied (core has no UI). 209 PASS.
+- **Orchestration tools** — `bk.agent.route` + `bk.agent.review` standard tools (agent_tools: 11 → 13) — expose the AgentFacade's manager-routing + reviewer-verdict as MCP tools so workflows / agents can drive rule-based agent→agent handoff. `route{managerId, request, candidateAgentIds?}` → `{targetAgentId, confidence, reason}`; `review{reviewerId, targetAgentId, content}` → `{verdict, severity, comments}`. standardTools map: 45 → 47.
+- **Destructive-action gate** — `HostToolRegistry`: `registerExposed(destructive: true)` + optional `confirmDestructive` host callback (ctor). Destructive tools (git push / mail / settlement / external publish) are gated through the callback before running — **blocked when the human declines or no callback is wired (deny-by-default)**. `destructive` defaults false → existing tools unaffected. The confirm UI is host-supplied (core has no UI). 209 PASS.
 
 ### Fixed
 - **`bk.philosophy.put` accepts a raw Ethos and never silently drops the body.** Previously `put` called `EthosRecord.fromJson(input)` directly, so an author / LLM passing a raw Ethos (no `payload` envelope key) stored `payload: {}` — the body was lost and every later `getEthos` / `intervene` / `checkProhibitions` operated on an empty ethos (or crashed in `Ethos.fromJson`). `put` now detects the shape: an envelope (`payload` present) is stored as before; a raw Ethos is wrapped into an `EthosRecord` with `payload: <ethos>`, `id`/`name`/`version` derived from the ethos (version from `metadata.version`). The body is validated via `Ethos.fromJson` before storage, returning a clear `invalid ethos: <field-named message>` (mcp_bundle 0.4.4) instead of storing garbage. Integration test: `test/system/philosophy_authoring_test.dart` (raw round-trip preserves body · envelope back-compat · malformed → clear error) over a real `KvEthosStoreAdapter`. 212 PASS.
 
 ### Changed (dependency floor)
-- `flowbrain_core` `^0.1.4` → `^0.1.5` — track the latest published cascade release (flowbrain_core 0.1.5 wires spec 12 §2·§3·§3b·§4·§4b). The kernel's §5 route/review tools wrap the existing `AgentFacade.route`/`review` (present since 0.1.x), so this is an internal-latest constraint bump, not a symbol requirement.
+- `flowbrain_core` `^0.1.4` → `^0.1.5` — track the latest published cascade release (flowbrain_core 0.1.5 wires the orchestration cascade). The kernel's route/review tools wrap the existing `AgentFacade.route`/`review` (present since 0.1.x), so this is an internal-latest constraint bump, not a symbol requirement.
 - `mcp_bundle` `^0.4.1` → `^0.4.4` — the `bk.philosophy.put` fix above relies on the Ethos graph `fromJson` throwing field-named `FormatException`s (mcp_bundle 0.4.4) for the clear-error guarantee; floored to **guarantee** it.
 
 ### Backward compatibility
@@ -64,7 +88,7 @@
   `WebSocketClientTransport` from `mcp_bridge`) and opens a
   `KernelClientConnection` over it. The kernel itself carries no FFI or
   platform dependency for the transport — the calling host owns those by
-  design (`specs/platform/08-extension.md` §4 injection seam). The abstract
+  design (injection seam). The abstract
   `KernelClientHost` is unchanged.
 - `clientTools` function exported from the main barrel
   (`lib/brain_kernel.dart`). Returns the `bk.mcp.*` in-process tool map so
@@ -85,7 +109,7 @@
 - `BundleActivation.registerBehavior(BehaviorDefinition)` — maps a bundle's `behavior.definitions[]` entry to an `OpsRuntime.behaviorRegistry` factory. Called automatically inside the `activate` loop when `bundle.behavior` is present; result carries `result.behaviors` count and `registeredBehaviors` list. `ownsBehavior(id)` predicate and teardown unregistration included. The action dispatcher surfaces a step's tool/skill output into run state — a tool's JSON result (or a skill's `Map` result) is merged so a later step's `when` guard can read its keys (e.g. gate on `hasHardViolation` from `bk.philosophy.check`).
 - `bk.behavior.run`, `bk.behavior.resume`, and `bk.behavior.list` standard tools registered in `ops_tools.dart`, under the `bk.behavior.*` namespace alongside `bk.workflow.*` / `bk.pipeline.*` / `bk.runbook.*`. Execution routes through the ops facade (`app.system.ops.runBehavior` / `resumeBehavior` / `listBehaviors`, added in mcp_knowledge 0.2.4) — the same layer the workflow/runbook tools use — so the kernel and tools layer hold no direct `mcp_knowledge_ops` dependency for behavior execution. `bk.behavior.resume` accepts an optional `statePatch` (e.g. `{"approved": true}`) merged into the run state before re-evaluation, so an approval unblocks a waiting guard.
 - `BundleActivation` optional `behaviorStore` field (`StateStore?`) — injected durable store for suspend/resume across restarts; defaults to per-behavior `EphemeralStateStore` when absent.
-- **MCP serving** (`specs/mcp_serving` 1.0) — `KernelEndpoint.activate` exposes the activated bundle as the well-known `bundle://manifest.json` resource (the bundle document: manifest metadata + sections) so a remote AppPlayer-class client can `resources/read` it, reconstruct the `McpBundle`, and run it identically to a local bundle. `KernelServerHost` gains a `resourceUris` introspection getter (parity with `toolDefinitions` / `promptDefinitions`), implemented by `InProcessKernelServerHost` and `ServerBootstrap`.
+- **MCP serving** (MCP Serving 1.0) — `KernelEndpoint.activate` exposes the activated bundle as the well-known `bundle://manifest.json` resource (the bundle document: manifest metadata + sections) so a remote AppPlayer-class client can `resources/read` it, reconstruct the `McpBundle`, and run it identically to a local bundle. `KernelServerHost` gains a `resourceUris` introspection getter (parity with `toolDefinitions` / `promptDefinitions`), implemented by `InProcessKernelServerHost` and `ServerBootstrap`.
 - New regression tests included in the system test suite.
 
 ### Changed (dependency floors)

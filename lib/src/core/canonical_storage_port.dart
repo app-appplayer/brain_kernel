@@ -1,4 +1,4 @@
-/// I/O abstraction for [Canonical] (DDD-03).
+/// I/O abstraction for [Canonical].
 ///
 /// Decouples the canonical container from the underlying storage shape so
 /// each domain can plug its own bundle-on-disk strategy:

@@ -3,15 +3,14 @@
 /// LLM / bundle / agent can read knowledge assets without first
 /// learning a host-specific catalog.
 ///
-/// Knowledge-operations §14.3 — bridge's `readResource(uri)` parses
+/// The bridge's `readResource(uri)` parses
 /// the URI, applies `scopeId` on the local-id segment (so the bundle
 /// code can write `kb://fact/foo` and the bridge resolves it to
 /// `kb://fact/<bundleId>.foo`), and looks up the matching kernel
 /// facade.
 library;
 
-/// Eight kernel-facade categories. The exact set matches the §1
-/// taxonomy.
+/// Eight kernel-facade categories.
 enum KbFacade {
   fact,
   skill,

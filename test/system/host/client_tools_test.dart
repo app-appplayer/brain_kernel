@@ -4,8 +4,9 @@
 /// (general-tool path), never the `bk.*` facade surface.
 library;
 
-import 'dart:async' show Completer;
+import 'dart:async';
 import 'dart:convert' show jsonDecode;
+
 
 import 'package:brain_kernel/brain_kernel.dart';
 import 'package:brain_kernel/mcp_host.dart'
@@ -14,6 +15,7 @@ import 'package:mcp_client/mcp_client.dart' show ClientTransport;
 import 'package:test/test.dart';
 
 void main() {
+  resourceSubscriptionTests();
   group('client_tools (mcp.* — app-driven)', () {
     late Map<String, KernelToolHandler> dispatcher;
     late InProcessKernelServerHost endpoint;
@@ -230,6 +232,20 @@ class _FakeConnection implements KernelClientConnection {
 
   final void Function(String tool, Map<String, dynamic> args)? onCall;
 
+  /// Uris this fake was asked to watch / stop watching, in order.
+  final List<String> subscribed = <String>[];
+  final List<String> unsubscribed = <String>[];
+  final StreamController<String> updates = StreamController<String>.broadcast();
+
+  @override
+  Future<void> subscribeResource(String uri) async => subscribed.add(uri);
+
+  @override
+  Future<void> unsubscribeResource(String uri) async => unsubscribed.add(uri);
+
+  @override
+  Stream<String> get resourceUpdates => updates.stream;
+
   @override
   bool get isConnected => true;
 
@@ -269,4 +285,59 @@ class _FakeConnection implements KernelClientConnection {
 
   @override
   Future<void> close() async {}
+}
+
+/// Watching a resource on a connected server.
+///
+/// The kernel could read a resource once but not track it, so a UI showing a
+/// live device value had no way to get one — it rendered empty and nothing
+/// said why. `view` composing several devices made that the common case.
+void resourceSubscriptionTests() {
+  test('subscribe / unsubscribe reach the named connection', () async {
+    final host = _FakeHost();
+    final conn = await host.connect(
+      id: 'esp32.node',
+      transport: KernelTransportKind.stdio,
+    ) as _FakeConnection;
+    final dispatcher = clientTools(host);
+
+    await dispatcher['mcp.subscribe_resource']!(<String, dynamic>{
+      'id': 'esp32.node',
+      'uri': 'sensor://uptime',
+    });
+    expect(conn.subscribed, <String>['sensor://uptime']);
+
+    await dispatcher['mcp.unsubscribe_resource']!(<String, dynamic>{
+      'id': 'esp32.node',
+      'uri': 'sensor://uptime',
+    });
+    expect(conn.unsubscribed, <String>['sensor://uptime']);
+  });
+
+  test('an unknown connection is refused, not silently ignored', () async {
+    final host = _FakeHost();
+    final dispatcher = clientTools(host);
+    // These tools report failure in the envelope rather than throwing — the
+    // same contract as every other `mcp.*` verb, so a caller handles one shape.
+    final result = await dispatcher['mcp.subscribe_resource']!(<String, dynamic>{
+      'id': 'ghost',
+      'uri': 'sensor://uptime',
+    }) as Map<String, dynamic>;
+    expect(result['ok'], isFalse);
+    expect(result['code'], 'mcp.not_connected');
+  });
+
+  test('updates fan out to every watcher of the same device', () async {
+    // Two views can show the same board; a single-subscription stream would
+    // give the value to whichever listened first.
+    final conn = _FakeConnection(id: 'esp32.node');
+    final seenA = <String>[];
+    final seenB = <String>[];
+    conn.resourceUpdates.listen(seenA.add);
+    conn.resourceUpdates.listen(seenB.add);
+    conn.updates.add('sensor://uptime');
+    await Future<void>.delayed(Duration.zero);
+    expect(seenA, <String>['sensor://uptime']);
+    expect(seenB, <String>['sensor://uptime']);
+  });
 }

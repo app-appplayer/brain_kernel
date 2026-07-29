@@ -27,7 +27,7 @@ class UndoState {
 }
 
 /// One frame in either stack — the forward patch and the inverse used to
-/// undo it (DDD-04 §3).
+/// undo it.
 class _PatchFrame {
   _PatchFrame({
     required this.forward,

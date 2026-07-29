@@ -17,7 +17,7 @@ import 'undo_redo_stack.dart';
 
 export '_inverse_patch.dart' show JsonPatchSet, PatchOp, PatchApplyException;
 
-/// Typed origin descriptor (DDD-04 §2). Sealed so consumers can switch
+/// Typed origin descriptor. Sealed so consumers can switch
 /// exhaustively in their UI / audit code.
 sealed class PatchOriginator {
   const PatchOriginator();
@@ -154,7 +154,7 @@ class PatchPipeline {
 
     final inverse = computeInverse(beforeJson, patch);
 
-    await _canonical.applyAtomic(
+    final hashes = await _canonical.applyAtomic(
       probedJson,
       changedPointers: patch.changedPointers,
       originator: originator,
@@ -168,8 +168,8 @@ class PatchPipeline {
 
     return PatchApplied(
       changedPointers: patch.changedPointers,
-      beforeHash: '',
-      afterHash: '',
+      beforeHash: hashes.beforeHash,
+      afterHash: hashes.afterHash,
     );
   }
 
@@ -197,15 +197,15 @@ class PatchPipeline {
   ) async {
     final beforeJson = _deepCloneJson(_canonical.bundleJson);
     applyPatch(beforeJson, entry.patch);
-    await _canonical.applyAtomic(
+    final hashes = await _canonical.applyAtomic(
       beforeJson,
       changedPointers: entry.patch.changedPointers,
       originator: originator,
     );
     return PatchApplied(
       changedPointers: entry.patch.changedPointers,
-      beforeHash: '',
-      afterHash: '',
+      beforeHash: hashes.beforeHash,
+      afterHash: hashes.afterHash,
     );
   }
 

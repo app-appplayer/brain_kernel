@@ -1,4 +1,4 @@
-/// Pending-asset queue for proposals (MOD-FEAT-004 / DDD-11).
+/// Pending-asset queue for proposals.
 ///
 /// Holds asset additions / replacements that have not yet been
 /// committed. The host (chat panel · MCP server · CLI extractor) pushes

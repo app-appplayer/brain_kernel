@@ -2,12 +2,12 @@
 ///
 /// Anything that flows between CORE / FEAT / INFRA layers belongs here so
 /// that no upper module depends on another upper module just for a value
-/// type. (DDD-15 §1 — `ChatTurn` lives here, not in `feat/chat`.)
+/// type. (`ChatTurn` lives here, not in `feat/chat`.)
 library;
 
 /// Six asset categories produced and edited by knowledge_builder. Each
-/// maps 1:1 to an `mcp_bundle` native section (DDD-13 §2 / SDD §2.2 of
-/// MOD-CORE-005 AssetCategoryMap).
+/// maps 1:1 to an `mcp_bundle` native section
+/// (see [AssetCategoryMap]).
 enum AssetCategory {
   chunks,
   fact,
@@ -17,7 +17,7 @@ enum AssetCategory {
   agent,
 }
 
-/// Role of a single chat turn in the LLM assistant pane (DDD-15 §1).
+/// Role of a single chat turn in the LLM assistant pane.
 enum ChatRole {
   user,
   assistant,

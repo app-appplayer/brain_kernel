@@ -1,4 +1,4 @@
-/// MCP server bootstrap (MOD-INFRA-001 / DDD-20).
+/// MCP server bootstrap.
 ///
 /// `ServerBootstrap` is the reference [KernelServerHost] impl on top of
 /// `package:mcp_server`. The kernel core never imports it directly —

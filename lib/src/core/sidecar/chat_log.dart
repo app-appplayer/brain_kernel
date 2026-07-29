@@ -2,7 +2,7 @@
 ///
 /// Stores one [ChatTurn] per line as JSON. Survives a host crash mid-write
 /// because each line is committed independently — corrupt or partial
-/// trailing lines are silently skipped on read (DDD-15 §2).
+/// trailing lines are silently skipped on read.
 library;
 
 import 'dart:async';

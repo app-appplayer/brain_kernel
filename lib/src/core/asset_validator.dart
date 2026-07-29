@@ -16,7 +16,7 @@ import 'types.dart';
 /// Which validator pass produced an issue.
 enum ValidationLayer { schema, crossRef, runtime, behavioral }
 
-/// Callback that probes the runtime layer (DDD-05 §2.3). Defined here so
+/// Callback that probes the runtime layer. Defined here so
 /// the validator stays decoupled from `flowbrain`. A typical
 /// implementation runs `KnowledgeSystem.importBundle` in a
 /// `__validate__` workspace and converts `BundleImportSummary` /
@@ -55,7 +55,7 @@ class ValidationReport {
       const ValidationReport(errors: [], warnings: [], infos: []);
 
   /// Combine multiple reports preserving order. Used by the patch
-  /// pipeline to merge fast-path layers (DDD-05 §10).
+  /// pipeline to merge fast-path layers.
   static ValidationReport merge(List<ValidationReport> parts) {
     final errors = <ValidationIssue>[];
     final warnings = <ValidationIssue>[];

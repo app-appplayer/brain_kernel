@@ -3,7 +3,7 @@
 ///
 /// Headless — no UI dependency. Products (builder, industrial, medical,
 /// education, B2B, personal) wire kernel pieces together with their own
-/// UI and domain workflow. See `docs/00_PRD/PRD.md` for the manifesto.
+/// UI and domain workflow.
 ///
 /// **Library dependency policy** — the kernel itself does NOT depend on
 /// `package:mcp_server` / `package:mcp_client` at the type level. It

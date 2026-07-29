@@ -32,7 +32,7 @@ library;
 export 'src/infra/server/server_bootstrap.dart';
 // Reference impl wrapping `mcp_client.Client` + transports.
 export 'src/system/host/mcp/mcp_client_kernel_host.dart';
-// Injected-transport seam (spec 08 §4 / spec 15 §8) — capability interface
+// Injected-transport seam — capability interface
 // hosts probe off the abstract client host to inject a host-built transport.
 export 'src/system/host/mcp/extension_transport_connect.dart';
 
@@ -46,3 +46,5 @@ export 'package:mcp_client/mcp_client.dart'
         StdioClientTransport,
         SseClientTransport,
         StreamableHttpClientTransport;
+export 'src/system/host/mcp/shared_subscriptions.dart';
+export 'src/system/host/mcp/shared_notifications.dart';

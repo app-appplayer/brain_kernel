@@ -6,11 +6,15 @@
 /// never call remote servers leave the parameter null.
 library;
 
+import 'dart:async';
+
 import 'package:mcp_client/mcp_client.dart' as cli;
 
 import '../kernel_client_host.dart';
 import '../kernel_envelope.dart';
 import 'extension_transport_connect.dart';
+import 'shared_notifications.dart';
+import 'shared_subscriptions.dart';
 
 class McpClientKernelHost
     implements KernelClientHost, ExtensionTransportConnect {
@@ -61,7 +65,7 @@ class McpClientKernelHost
   /// (serial / usb / ble / ws / tcp / custom), built outside the kernel and
   /// injected here. The kernel never depends on the transport's platform
   /// libraries — the host owns that (e.g. mcp_bridge's FFI transports). This
-  /// is the injection seam described in `specs/platform/08-extension.md` §4:
+  /// is the injection seam:
   /// the seam lives in the kernel (pure, no FFI), the impl in the host.
   ///
   /// Formalized by the [ExtensionTransportConnect] capability interface so
@@ -82,6 +86,18 @@ class McpClientKernelHost
     await client.connect(transport);
 
     final conn = _McpClientConnection(id: id, client: client);
+    _connections[id] = conn;
+    return conn;
+  }
+
+  @override
+  Future<KernelClientConnection> adoptClient({
+    required String id,
+    required cli.Client client,
+  }) async {
+    final existing = _connections[id];
+    if (existing != null && existing.isConnected) return existing;
+    final conn = _McpClientConnection(id: id, client: client, owned: false);
     _connections[id] = conn;
     return conn;
   }
@@ -156,12 +172,45 @@ class McpClientKernelHost
 }
 
 class _McpClientConnection implements KernelClientConnection {
-  _McpClientConnection({required this.id, required this.client});
+  _McpClientConnection({
+    required this.id,
+    required this.client,
+    this.owned = true,
+  }) {
+    // Through the fan-out, not `client.onResourceUpdated`: that keeps ONE
+    // handler per method, so on a client shared with the device's own screen
+    // whichever registered last took the slot and the other stopped receiving
+    // updates entirely — with the subscription still live and the socket still
+    // up, so nothing anywhere reported a problem.
+    _removeListener = SharedClientNotifications.add(
+      client,
+      'notifications/resources/updated',
+      (params) async {
+        final uri = params['uri'];
+        if (uri is String && !_updates.isClosed) _updates.add(uri);
+      },
+    );
+  }
+
+  void Function()? _removeListener;
+
+  /// Broadcast because several views may watch the same device — a
+  /// single-subscription stream would hand the value to whichever listened
+  /// first and leave the rest empty.
+  final StreamController<String> _updates =
+      StreamController<String>.broadcast();
 
   @override
   final String id;
 
   final cli.Client client;
+
+  /// False when the client was adopted from the host (see
+  /// `ExtensionTransportConnect.adoptClient`). An adopted client is shared —
+  /// the host's own screens may be using the same link — so [close] must
+  /// deregister without ending it.
+  final bool owned;
+
 
   @override
   bool get isConnected => client.isConnected;
@@ -209,8 +258,22 @@ class _McpClientConnection implements KernelClientConnection {
   }
 
   @override
+  Future<void> subscribeResource(String uri) =>
+      SharedResourceSubscriptions.subscribe(client, uri);
+
+  @override
+  Future<void> unsubscribeResource(String uri) =>
+      SharedResourceSubscriptions.unsubscribe(client, uri);
+
+  @override
+  Stream<String> get resourceUpdates => _updates.stream;
+
+  @override
   Future<void> close() async {
-    client.disconnect();
+    _removeListener?.call();
+    _removeListener = null;
+    await _updates.close();
+    if (owned) client.disconnect();
   }
 }
 

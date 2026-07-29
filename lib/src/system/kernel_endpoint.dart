@@ -147,7 +147,7 @@ class KernelEndpoint {
     _ownedBundleIds.add(bundleId);
     final result = await activation.activate(bundle);
 
-    // MCP Serving 1.0 (specs/mcp_serving/spec/1.0) — expose the bundle
+    // MCP Serving 1.0 — expose the bundle
     // document on this endpoint's server so a remote AppPlayer-class client
     // can `resources/read bundle://manifest.json`, reconstruct the McpBundle,
     // and run it identically (the cross-process counterpart of the in-process

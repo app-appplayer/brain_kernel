@@ -2,7 +2,7 @@
 ///
 /// Supports the four operations that knowledge_builder actually emits —
 /// `add` / `remove` / `replace` / `move`. `copy` and `test` are out of
-/// scope (DDD-04 §5). The implementation operates on plain JSON maps so
+/// scope. The implementation operates on plain JSON maps so
 /// the same code is exercised by tests without spinning up the full
 /// `mcp_bundle` model.
 library;

@@ -1,5 +1,5 @@
 /// Adapter that wires `FlowBrainWiring` into `AssetValidator`'s
-/// runtime layer (DDD-05 §2.3 / DDD-24 §4).
+/// runtime layer.
 ///
 /// Calls `KnowledgeSystem.importBundle(bundle, workspaceId: '__validate__')`
 /// and translates the resulting `BundleImportSummary` (or any thrown
