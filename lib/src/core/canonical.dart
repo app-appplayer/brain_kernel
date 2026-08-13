@@ -16,6 +16,7 @@ import 'package:mcp_bundle/mcp_bundle.dart';
 
 import '_canonical_hash.dart';
 import 'canonical_storage_port.dart';
+import 'default_canonical_storage.dart';
 
 /// Why a [CanonicalChange] was emitted.
 enum CanonicalChangeKind { patch, open, saveAs, revert }
@@ -63,14 +64,28 @@ class Canonical {
   /// [hasRestoredDraft] becomes `true`.
   ///
   /// [storage] decides how `manifest.json` and any reserved folders are
-  /// read off disk — defaults to the manifest-only impl that matches the
-  /// kernel's prior direct `McpBundle.fromJson` behaviour.
+  /// read — defaulting, where the platform has a filesystem, to the
+  /// manifest-only implementation that matches the kernel's prior direct
+  /// `McpBundle.fromJson` behaviour.
+  ///
+  /// Where it does not, there is no default and the host must pass one. That
+  /// is stated here rather than discovered later: a canonical is opened once
+  /// at a known moment, and being told the decision is missing then is better
+  /// than a storage call failing deep in a read.
   static Future<Canonical> openAt(
     String mbdPath, {
     required String draftPath,
-    CanonicalStoragePort storage = const ManifestOnlyCanonicalStorage(),
+    CanonicalStoragePort? storage,
   }) async {
-    final committed = await storage.readJson(mbdPath);
+    final resolved = storage ?? defaultCanonicalStorage();
+    if (resolved == null) {
+      throw StateError(
+        'Canonical.openAt needs a storage on this platform: there is no '
+        'filesystem to default to. Pass the one this host keeps canonicals '
+        'in.',
+      );
+    }
+    final committed = await resolved.readJson(mbdPath);
     if (committed == null) {
       throw StateError('Canonical bundle not found at $mbdPath');
     }
@@ -79,15 +94,15 @@ class Canonical {
     var bundleJson = committed;
     var restored = false;
 
-    if (await storage.dirExists(draftPath)) {
+    if (await resolved.dirExists(draftPath)) {
       try {
-        final draftJson = await storage.readJson(draftPath);
+        final draftJson = await resolved.readJson(draftPath);
         if (draftJson != null &&
             canonicalHashOfJson(draftJson) != committedHash) {
           bundleJson = draftJson;
           restored = true;
         } else {
-          await storage.deleteDir(draftPath);
+          await resolved.deleteDir(draftPath);
         }
       } catch (_) {
         // Corrupt draft — fall back to committed, leave the dir for a
@@ -100,7 +115,7 @@ class Canonical {
       mbdPath: mbdPath,
       draftPath: draftPath,
       restoredDraft: restored,
-      storage: storage,
+      storage: resolved,
     );
   }
 

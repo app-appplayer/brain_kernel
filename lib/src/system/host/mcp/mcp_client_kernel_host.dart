@@ -54,7 +54,20 @@ class McpClientKernelHost
       endpoint: endpoint,
       options: options ?? const <String, dynamic>{},
     );
-    await client.connect(wire);
+    // Bounded on purpose. Building a transport does not touch the endpoint —
+    // the handshake is the first thing that does — so an unreachable target
+    // only shows up here, and a caller that never gets an answer cannot report
+    // one. `options.connectTimeoutMs` raises it for a slow target.
+    final timeoutMs = (options?['connectTimeoutMs'] as num?)?.toInt() ?? 15000;
+    try {
+      await client.connect(wire).timeout(Duration(milliseconds: timeoutMs));
+    } on TimeoutException {
+      client.disconnect();
+      throw StateError(
+        'connect timed out after ${timeoutMs}ms: $id '
+        '(${endpoint ?? transport.name})',
+      );
+    }
 
     final conn = _McpClientConnection(id: id, client: client);
     _connections[id] = conn;

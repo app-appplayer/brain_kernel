@@ -3,7 +3,8 @@
 /// Decouples the canonical container from the underlying storage shape so
 /// each domain can plug its own bundle-on-disk strategy:
 ///
-///   * **Manifest-only** (default, [ManifestOnlyCanonicalStorage]) reads
+///   * **Manifest-only** (the kernel's default, in
+///     `manifest_only_canonical_storage.dart`) reads
 ///     and writes `manifest.json` directly via `McpBundle.fromJson` /
 ///     `McpBundleWriter.writeDirectory`. Preserves every typed section
 ///     mcp_bundle models — knowledge-graph hosts (philosophy, agents,
@@ -20,16 +21,20 @@
 /// content outside the schema.
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:mcp_bundle/mcp_bundle.dart';
-import 'package:path/path.dart' as p;
-
 /// Strategy that knows how to read, write, and delete a canonical bundle
 /// directory. All [Canonical] disk-side I/O routes through this port —
 /// no direct `dart:io` or `McpBundleWriter` calls leak into the
 /// canonical itself.
+///
+/// **This file declares the port and nothing else.** It imports no
+/// platform library, so a host that supplies its own implementation — a
+/// browser storing into the account rather than onto a disk — can name the
+/// type without dragging `dart:io` into a build that has none. The
+/// filesystem implementation lives beside it in
+/// `manifest_only_canonical_storage.dart`.
+///
+/// `dirPath` is an opaque address, not necessarily a filesystem path: an
+/// implementation is free to read it as a key.
 abstract interface class CanonicalStoragePort {
   /// Read the canonical at [dirPath] as a raw JSON map. Returns null
   /// when the directory is missing or has no recoverable bundle.
@@ -48,48 +53,4 @@ abstract interface class CanonicalStoragePort {
 
   /// Recursively delete [dirPath]. No-op when the directory is absent.
   Future<void> deleteDir(String dirPath);
-}
-
-/// Default kernel-side storage. Reads `manifest.json` directly via
-/// `McpBundle.fromJson` so every typed section round-trips. Writes via
-/// `McpBundleWriter.writeDirectory` (no reserved folders).
-///
-/// Domains that store content outside the typed schema (notably vibe's
-/// `ApplicationDefinition` ui content) provide their own port impl.
-class ManifestOnlyCanonicalStorage implements CanonicalStoragePort {
-  const ManifestOnlyCanonicalStorage();
-
-  @override
-  Future<Map<String, dynamic>?> readJson(String dirPath) async {
-    final manifestFile = File(p.join(dirPath, 'manifest.json'));
-    if (!await manifestFile.exists()) return null;
-    final raw = await manifestFile.readAsString();
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map<String, dynamic>) return null;
-    return decoded;
-  }
-
-  @override
-  Future<void> writeJson(
-    Map<String, dynamic> json,
-    String dirPath,
-  ) async {
-    final bundle = McpBundle.fromJson(json);
-    await McpBundleWriter.writeDirectory(
-      bundle,
-      dirPath,
-      overwrite: true,
-    );
-  }
-
-  @override
-  Future<bool> dirExists(String dirPath) => Directory(dirPath).exists();
-
-  @override
-  Future<void> deleteDir(String dirPath) async {
-    final dir = Directory(dirPath);
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
-    }
-  }
 }

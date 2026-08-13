@@ -7,9 +7,11 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+import 'store/resolve_sidecar_store.dart';
+import 'store/sidecar_store.dart';
 
 import '../types.dart';
 
@@ -77,35 +79,46 @@ class PrefsSnapshot {
 /// File-backed preferences. Atomic write (temp + rename) so a crash
 /// mid-flush cannot corrupt the live file (NFR-PERSIST-001).
 class Prefs {
-  Prefs._({required String path, required PrefsSnapshot snapshot})
-      : _path = path,
-        _snapshot = snapshot;
+  Prefs._({
+    required String path,
+    required PrefsSnapshot snapshot,
+    required SidecarStore store,
+  })  : _path = path,
+        _snapshot = snapshot,
+        _store = store;
 
   /// Load existing prefs or return defaults. Never throws on parse error
   /// — corrupt JSON is logged via [warnings] and replaced with defaults.
-  static Future<Prefs> load(String projectPath) async {
+  static Future<Prefs> load(
+    String projectPath, {
+    SidecarStore? store,
+  }) async {
+    final resolved = resolveSidecarStore(store, 'Prefs.load');
     final path = p.join(projectPath, 'prefs.json');
-    final file = File(path);
-    if (!await file.exists()) {
-      return Prefs._(
-          path: path, snapshot: const PrefsSnapshot());
-    }
+    final defaults = Prefs._(
+      path: path,
+      snapshot: const PrefsSnapshot(),
+      store: resolved,
+    );
     try {
-      final raw = await file.readAsString();
+      final raw = await resolved.read(path);
+      if (raw == null) return defaults;
       final decoded = jsonDecode(raw);
       if (decoded is Map<String, dynamic>) {
         return Prefs._(
           path: path,
           snapshot: PrefsSnapshot.fromJson(decoded),
+          store: resolved,
         );
       }
     } catch (_) {
       // Fall through to defaults — UX over correctness.
     }
-    return Prefs._(path: path, snapshot: const PrefsSnapshot());
+    return defaults;
   }
 
   final String _path;
+  final SidecarStore _store;
   PrefsSnapshot _snapshot;
 
   PrefsSnapshot get snapshot => _snapshot;
@@ -119,12 +132,10 @@ class Prefs {
   /// UI tick never blocks on prefs (NFR-PERSIST-003).
   Future<void> save() async {
     try {
-      final tmp = File('$_path.tmp');
-      await tmp.writeAsString(
+      await _store.write(
+        _path,
         const JsonEncoder.withIndent('  ').convert(_snapshot.toJson()),
-        flush: true,
       );
-      await tmp.rename(_path);
     } catch (_) {
       // Non-fatal — see NFR-PERSIST-003.
     }
@@ -132,11 +143,6 @@ class Prefs {
 
   /// Copy the prefs file from this project to [destProjectPath]. Used by
   /// `Project.saveAs` so the new project starts with the same UI state.
-  Future<void> copyTo(String destProjectPath) async {
-    final src = File(_path);
-    if (!await src.exists()) return;
-    final destFile = File(p.join(destProjectPath, 'prefs.json'));
-    await destFile.parent.create(recursive: true);
-    await src.copy(destFile.path);
-  }
+  Future<void> copyTo(String destProjectPath) =>
+      _store.copy(_path, p.join(destProjectPath, 'prefs.json'));
 }

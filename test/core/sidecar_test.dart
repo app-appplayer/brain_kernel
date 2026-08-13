@@ -17,14 +17,14 @@ void main() {
 
   group('Prefs', () {
     test('returns defaults when prefs.json is missing', () async {
-      final prefs = await Prefs.load(tmp.path);
+      final prefs = await Prefs.load(tmp.path, store: const FileSidecarStore());
       expect(prefs.snapshot.focusedCategory, isNull);
       expect(prefs.snapshot.chatVisible, isTrue);
       expect(prefs.snapshot.previewState, isEmpty);
     });
 
     test('save then load round-trips snapshot', () async {
-      final prefs = await Prefs.load(tmp.path);
+      final prefs = await Prefs.load(tmp.path, store: const FileSidecarStore());
       prefs.update(const PrefsSnapshot(
         focusedCategory: AssetCategory.skill,
         selectedAssetId: 'sk-1',
@@ -34,7 +34,7 @@ void main() {
       ));
       await prefs.save();
 
-      final reload = await Prefs.load(tmp.path);
+      final reload = await Prefs.load(tmp.path, store: const FileSidecarStore());
       expect(reload.snapshot.focusedCategory, AssetCategory.skill);
       expect(reload.snapshot.selectedAssetId, 'sk-1');
       expect(reload.snapshot.chatVisible, isFalse);
@@ -45,7 +45,7 @@ void main() {
     test('corrupt prefs.json falls back to defaults', () async {
       await File(p.join(tmp.path, 'prefs.json'))
           .writeAsString('not json');
-      final prefs = await Prefs.load(tmp.path);
+      final prefs = await Prefs.load(tmp.path, store: const FileSidecarStore());
       expect(prefs.snapshot.focusedCategory, isNull);
       expect(prefs.snapshot.chatVisible, isTrue);
     });
@@ -53,7 +53,7 @@ void main() {
 
   group('ChatLog', () {
     test('append + readAll + clear', () async {
-      final log = ChatLog.attach(tmp.path);
+      final log = ChatLog.attach(tmp.path, store: const FileSidecarStore());
       expect(await log.readAll(), isEmpty);
 
       await log.append(ChatTurn(
@@ -87,7 +87,7 @@ void main() {
           '{"id":"t2","role":"assistant","text":"b","ts":"2026-05-05T10:00:01Z"}',
         ].join('\n'),
       );
-      final log = ChatLog.attach(tmp.path);
+      final log = ChatLog.attach(tmp.path, store: const FileSidecarStore());
       final all = await log.readAll();
       expect(all.map((t) => t.id), ['t1', 't2']);
     });
@@ -106,7 +106,7 @@ void main() {
       final canonical =
           await Canonical.openAt(mbd, draftPath: '$mbd.draft');
 
-      final log = HistoryLog.attach(tmp.path);
+      final log = HistoryLog.attach(tmp.path, store: const FileSidecarStore());
       log.subscribe(canonical);
 
       await canonical.applyAtomicBundle(

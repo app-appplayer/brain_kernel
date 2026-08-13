@@ -13,9 +13,11 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+import 'store/resolve_sidecar_store.dart';
+import 'store/sidecar_store.dart';
 
 import '../_inverse_patch.dart';
 import '../undo_redo_stack.dart';
@@ -94,46 +96,39 @@ class UndoSnapshot {
 }
 
 class UndoLog {
-  UndoLog._(this._path);
+  UndoLog._(this._path, this._store);
 
-  /// Bind to `<projectPath>/undo.json`. Does not read the file — call
+  /// Bind to `<projectPath>/undo.json`. Does not read anything — call
   /// [read] when rehydrating.
-  static UndoLog attach(String projectPath) {
-    return UndoLog._(p.join(projectPath, 'undo.json'));
+  static UndoLog attach(String projectPath, {SidecarStore? store}) {
+    return UndoLog._(p.join(projectPath, 'undo.json'),
+        resolveSidecarStore(store, 'UndoLog.attach'));
   }
 
   final String _path;
+  final SidecarStore _store;
 
   /// Path to the underlying file (absolute).
   String get path => _path;
 
-  /// Serialize [snapshot] to the underlying file. Atomic — writes to a
-  /// sibling `.tmp` first, then `rename`s on top of the target so a
-  /// crash mid-write cannot corrupt the prior snapshot. IO failures are
-  /// swallowed (NFR-PERSIST-003).
+  /// Serialize [snapshot] to the underlying record. The store writes
+  /// atomically where it can, so a crash mid-write cannot corrupt the prior
+  /// snapshot. Failures are swallowed (NFR-PERSIST-003).
   Future<void> save(UndoSnapshot snapshot) async {
     try {
-      final file = File(_path);
-      await file.parent.create(recursive: true);
-      final tmp = File('$_path.tmp');
-      await tmp.writeAsString(
-        jsonEncode(snapshot.toJson()),
-        flush: true,
-      );
-      await tmp.rename(_path);
+      await _store.write(_path, jsonEncode(snapshot.toJson()));
     } catch (_) {
       // Non-fatal — kernel keeps running on its in-memory stack.
     }
   }
 
-  /// Read the on-disk snapshot. Returns `null` when the file is missing
-  /// or corrupt — host treats that as "no recovery available" and starts
-  /// from an empty stack.
+  /// Read the stored snapshot. Returns `null` when it is missing or corrupt
+  /// — host treats that as "no recovery available" and starts from an empty
+  /// stack.
   Future<UndoSnapshot?> read() async {
     try {
-      final file = File(_path);
-      if (!await file.exists()) return null;
-      final raw = await file.readAsString();
+      final raw = await _store.read(_path);
+      if (raw == null) return null;
       final decoded = jsonDecode(raw);
       if (decoded is! Map<String, dynamic>) return null;
       return UndoSnapshot.fromJson(decoded);
@@ -142,12 +137,11 @@ class UndoLog {
     }
   }
 
-  /// Truncate / remove the snapshot file. Used when the host clears the
-  /// stack or wants a clean start.
+  /// Remove the snapshot. Used when the host clears the stack or wants a
+  /// clean start.
   Future<void> clear() async {
     try {
-      final file = File(_path);
-      if (await file.exists()) await file.delete();
+      await _store.remove(_path);
     } catch (_) {
       // Non-fatal.
     }
@@ -156,11 +150,7 @@ class UndoLog {
   /// Copy the snapshot to the destination project (`saveAs` flow).
   Future<void> copyTo(String destProjectPath) async {
     try {
-      final src = File(_path);
-      if (!await src.exists()) return;
-      final dest = File(p.join(destProjectPath, 'undo.json'));
-      await dest.parent.create(recursive: true);
-      await src.copy(dest.path);
+      await _store.copy(_path, p.join(destProjectPath, 'undo.json'));
     } catch (_) {
       // Non-fatal.
     }

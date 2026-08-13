@@ -5,7 +5,7 @@ description: >
   RAG over mcp_bundle and flowbrain_core. Products (builder / industrial
   HMI / medical / education / B2B / personal) wire kernel pieces with
   their own UI and domain workflow.
-version: 0.2.0
+version: 0.2.1
 homepage: https://app-appplayer.github.io/makemind
 repository: https://github.com/app-appplayer/brain_kernel
 issue_tracker: https://github.com/app-appplayer/brain_kernel/issues
@@ -27,7 +27,7 @@ dependencies:
   meta: ^1.15.0
   path: ^1.9.0
   mcp_bundle: ^0.4.4
-  mcp_client: ^2.1.0
+  mcp_client: ^2.2.1
   mcp_llm: ^2.1.1
   mcp_server: ^2.1.1
   flowbrain_core: ^0.1.7
@@ -38,6 +38,10 @@ dependencies:
   # but Dart needs the package in pubspec to allow `as fb` import
   # of those types in the kernel side adapter.
   mcp_knowledge_ops: ^0.2.2
+  # Browser storage adapter only (`core/sidecar/store/opfs_sidecar_store.dart`).
+  # Reached solely through the web branch of a conditional import, so a VM or
+  # native host never compiles it.
+  web: ^1.1.0
 
 dev_dependencies:
   test: ^1.25.0

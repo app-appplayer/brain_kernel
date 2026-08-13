@@ -1,3 +1,40 @@
+## [0.2.1] - 2026-08-13
+
+### Added
+- The kernel runs where there is no filesystem. Storage is behind two ports:
+  `CanonicalStoragePort` for the canonical bundle and `SidecarStore` for
+  `prefs`, `undo`, `history` and `chat`. Neither port names a platform
+  library, so a host can implement one without being handed `dart:io`.
+- `OpfsSidecarStore` — a browser store over the origin-private file system,
+  exported from `brain_kernel_web.dart`. It is not on the main barrel:
+  `dart:js_interop` has no implementation off the web compilers, so a VM build
+  that reached it would not compile. `forAccount(accountKey)` is the only
+  constructor — OPFS is keyed by origin, not by person, so two people sharing
+  a browser would otherwise share their records.
+
+### Changed
+- The sidecars take an optional store (`Prefs.load(path, store: …)`,
+  `ChatLog.attach(path, store: …)`, and the same for `HistoryLog` /
+  `UndoLog`). Omitting it keeps the previous behaviour — the filesystem, where
+  there is one. Where there is none, the call refuses with a `StateError`
+  naming the missing decision rather than failing later inside a read.
+  `Canonical.openAt` behaves the same way with its `storage`.
+- `ManifestOnlyCanonicalStorage` moved to its own library so that naming the
+  port does not import the filesystem implementation. It is still exported
+  from the barrel.
+- Floor: `mcp_client ^2.2.1`. New dependency `web ^1.1.0`, reached only
+  through the web branch of a conditional import.
+
+### Fixed
+- `McpClientKernelHost.connect` is bounded (15 s default,
+  `options.connectTimeoutMs` to change it) and reports a timeout as an error.
+  Building a transport does not touch the endpoint, so an unreachable target
+  first shows up in the handshake, and a caller that never gets an answer
+  cannot report one.
+- The barrel exports `SidecarStore` and `defaultSidecarStore()`. Every sidecar
+  constructor requires a store, so without them the sidecars could not be
+  called from outside this package at all.
+
 ## 0.2.0 - 2026-07-28
 
 ### Changed

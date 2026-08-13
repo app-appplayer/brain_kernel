@@ -7,30 +7,39 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+import 'store/resolve_sidecar_store.dart';
+import 'store/sidecar_store.dart';
 
 import '../types.dart';
 
 class ChatLog {
-  ChatLog._(this._path);
+  ChatLog._(this._path, this._store);
 
   /// Bind to `<projectPath>/chat.jsonl`. Does not read the file — call
   /// [readAll] when rehydrating a session. Used for the legacy / global
   /// pre-agent-scoping log; new code should prefer [attachAgent].
-  static ChatLog attach(String projectPath) {
-    return ChatLog._(p.join(projectPath, 'chat.jsonl'));
+  static ChatLog attach(String projectPath, {SidecarStore? store}) {
+    return ChatLog._(p.join(projectPath, 'chat.jsonl'),
+        resolveSidecarStore(store, 'ChatLog.attach'));
   }
 
   /// Bind to `<projectPath>/chat/<agentId>.jsonl` — the agent-scoped log
   /// path defined by FR-CHT-002. The directory is created lazily on first
   /// `append`.
-  static ChatLog attachAgent(String projectPath, String agentId) {
-    return ChatLog._(p.join(projectPath, 'chat', '$agentId.jsonl'));
+  static ChatLog attachAgent(
+    String projectPath,
+    String agentId, {
+    SidecarStore? store,
+  }) {
+    return ChatLog._(p.join(projectPath, 'chat', '$agentId.jsonl'),
+        resolveSidecarStore(store, 'ChatLog.attachAgent'));
   }
 
   final String _path;
+  final SidecarStore _store;
 
   /// Path to the underlying file (absolute). Useful for [copyTo].
   String get path => _path;
@@ -39,9 +48,8 @@ class ChatLog {
   /// file order. Corrupt lines (invalid JSON or wrong shape) are skipped
   /// rather than throwing.
   Future<List<ChatTurn>> readAll() async {
-    final file = File(_path);
-    if (!await file.exists()) return const [];
-    final raw = await file.readAsString();
+    final raw = await _store.read(_path);
+    if (raw == null) return const [];
     final out = <ChatTurn>[];
     for (final line in const LineSplitter().convert(raw)) {
       if (line.trim().isEmpty) continue;
@@ -61,13 +69,7 @@ class ChatLog {
   /// persistence guarantees (NFR-PERSIST-003).
   Future<void> append(ChatTurn turn) async {
     try {
-      final file = File(_path);
-      await file.parent.create(recursive: true);
-      await file.writeAsString(
-        '${jsonEncode(turn.toJson())}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
+      await _store.append(_path, '${jsonEncode(turn.toJson())}\n');
     } catch (_) {
       // Non-fatal — see NFR-PERSIST-003.
     }
@@ -75,10 +77,7 @@ class ChatLog {
 
   /// Truncate the log file. Used when the user explicitly clears chat.
   Future<void> clear() async {
-    final file = File(_path);
-    if (await file.exists()) {
-      await file.writeAsString('', flush: true);
-    }
+    if (await _store.exists(_path)) await _store.write(_path, '');
   }
 
   /// Copy chat log to the destination project (used by SaveAs). The path
@@ -86,8 +85,6 @@ class ChatLog {
   /// log lands at `<dest>/chat/<agentId>.jsonl` and a global log lands at
   /// `<dest>/chat.jsonl`.
   Future<void> copyTo(String destProjectPath) async {
-    final src = File(_path);
-    if (!await src.exists()) return;
     final relParts = <String>[];
     final dir = p.basename(p.dirname(_path));
     if (dir == 'chat') {
@@ -97,8 +94,6 @@ class ChatLog {
     } else {
       relParts.add(p.basename(_path));
     }
-    final destFile = File(p.joinAll(<String>[destProjectPath, ...relParts]));
-    await destFile.parent.create(recursive: true);
-    await src.copy(destFile.path);
+    await _store.copy(_path, p.joinAll(<String>[destProjectPath, ...relParts]));
   }
 }

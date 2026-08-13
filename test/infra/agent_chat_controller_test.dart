@@ -28,7 +28,7 @@ void main() {
       final ctrl = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
 
       final result = await ctrl.sendUser('hello');
@@ -63,12 +63,12 @@ void main() {
       final saraCtrl = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
       final bobCtrl = AgentChatController(
         agentId: 'bob',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'bob'),
+        chatLog: ChatLog.attachAgent(dir.path, 'bob', store: const FileSidecarStore()),
       );
 
       await saraCtrl.sendUser('how is sara?');
@@ -107,7 +107,7 @@ void main() {
       final first = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
       await first.sendUser('first round');
       final beforeCount = first.history.length;
@@ -116,7 +116,7 @@ void main() {
       final second = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
       await second.rehydrate();
       expect(second.history.length, beforeCount);
@@ -134,7 +134,7 @@ void main() {
       final ctrl = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
       await ctrl.sendUser('first');
       expect(ctrl.history, isNotEmpty);
@@ -158,7 +158,7 @@ void main() {
       final ctrl = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
 
       final history = <List<ChatTurn>>[];
@@ -191,7 +191,7 @@ void main() {
       final ctrl = AgentChatController(
         agentId: 'sara',
         system: system,
-        chatLog: ChatLog.attachAgent(dir.path, 'sara'),
+        chatLog: ChatLog.attachAgent(dir.path, 'sara', store: const FileSidecarStore()),
       );
       final turn = await ctrl.appendToolResult(
         toolCallId: 'tc-1',

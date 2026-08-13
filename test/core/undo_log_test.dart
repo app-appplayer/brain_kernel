@@ -25,7 +25,7 @@ void main() {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
 
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       final snap = UndoSnapshot(
         undoFrames: [
           _snap('/a', 1, 2, note: 'r1'),
@@ -49,14 +49,14 @@ void main() {
     test('read returns null when file is missing', () async {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       expect(await log.read(), isNull);
     });
 
     test('read returns null when file is corrupt', () async {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       await File(p.join(dir.path, 'undo.json')).writeAsString('garbage{');
       expect(await log.read(), isNull);
     });
@@ -64,7 +64,7 @@ void main() {
     test('clear removes the file', () async {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       await log.save(UndoSnapshot.empty);
       expect(await File(log.path).exists(), isTrue);
       await log.clear();
@@ -74,7 +74,7 @@ void main() {
     test('save uses an atomic temp+rename (no .tmp leftover)', () async {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       await log.save(UndoSnapshot(
         undoFrames: [_snap('/a', 1, 2)],
         redoFrames: const [],
@@ -89,14 +89,14 @@ void main() {
       addTearDown(() => src.delete(recursive: true));
       addTearDown(() => dst.delete(recursive: true));
 
-      final srcLog = UndoLog.attach(src.path);
+      final srcLog = UndoLog.attach(src.path, store: const FileSidecarStore());
       await srcLog.save(UndoSnapshot(
         undoFrames: [_snap('/a', 1, 2)],
         redoFrames: const [],
       ));
       await srcLog.copyTo(dst.path);
 
-      final dstLog = UndoLog.attach(dst.path);
+      final dstLog = UndoLog.attach(dst.path, store: const FileSidecarStore());
       final read = await dstLog.read();
       expect(read, isNotNull);
       expect(read!.undoFrames, hasLength(1));
@@ -123,7 +123,7 @@ void main() {
     test('bindUndoLog flushes after every push / undo', () async {
       final dir = await _tmp();
       addTearDown(() => dir.delete(recursive: true));
-      final log = UndoLog.attach(dir.path);
+      final log = UndoLog.attach(dir.path, store: const FileSidecarStore());
       final stack = UndoRedoStack();
       final sub = bindUndoLog(stack, log);
 

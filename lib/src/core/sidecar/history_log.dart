@@ -8,9 +8,11 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+import 'store/resolve_sidecar_store.dart';
+import 'store/sidecar_store.dart';
 
 import '../canonical.dart';
 import '../patch_pipeline.dart';
@@ -57,15 +59,17 @@ class HistoryEntry {
 }
 
 class HistoryLog {
-  HistoryLog._(this._path);
+  HistoryLog._(this._path, this._store);
 
   /// Attach to `<projectPath>/history.jsonl`. The caller is responsible
   /// for invoking [subscribe] with the live canonical.
-  static HistoryLog attach(String projectPath) {
-    return HistoryLog._(p.join(projectPath, 'history.jsonl'));
+  static HistoryLog attach(String projectPath, {SidecarStore? store}) {
+    return HistoryLog._(p.join(projectPath, 'history.jsonl'),
+        resolveSidecarStore(store, 'HistoryLog.attach'));
   }
 
   final String _path;
+  final SidecarStore _store;
   StreamSubscription<CanonicalChange>? _sub;
 
   /// Path to the underlying file (absolute).
@@ -90,9 +94,8 @@ class HistoryLog {
 
   /// Read every row. Corrupt lines are skipped.
   Future<List<HistoryEntry>> readAll() async {
-    final file = File(_path);
-    if (!await file.exists()) return const [];
-    final raw = await file.readAsString();
+    final raw = await _store.read(_path);
+    if (raw == null) return const [];
     final out = <HistoryEntry>[];
     for (final line in const LineSplitter().convert(raw)) {
       if (line.trim().isEmpty) continue;
@@ -116,19 +119,12 @@ class HistoryLog {
   /// Truncate the audit file (developer / debugging only — production
   /// users should preserve the trail).
   Future<void> clear() async {
-    final file = File(_path);
-    if (await file.exists()) {
-      await file.writeAsString('', flush: true);
-    }
+    if (await _store.exists(_path)) await _store.write(_path, '');
   }
 
   /// Copy the audit file when a project is duplicated (`saveAs`).
   Future<void> copyTo(String destProjectPath) async {
-    final src = File(_path);
-    if (!await src.exists()) return;
-    final destFile = File(p.join(destProjectPath, 'history.jsonl'));
-    await destFile.parent.create(recursive: true);
-    await src.copy(destFile.path);
+    await _store.copy(_path, p.join(destProjectPath, 'history.jsonl'));
   }
 
   HistoryEntry _changeToEntry(CanonicalChange change) {
@@ -151,13 +147,7 @@ class HistoryLog {
 
   Future<void> _append(HistoryEntry entry) async {
     try {
-      final file = File(_path);
-      await file.parent.create(recursive: true);
-      await file.writeAsString(
-        '${jsonEncode(entry.toJson())}\n',
-        mode: FileMode.append,
-        flush: true,
-      );
+      await _store.append(_path, '${jsonEncode(entry.toJson())}\n');
     } catch (_) {
       // Non-fatal — NFR-PERSIST-003.
     }

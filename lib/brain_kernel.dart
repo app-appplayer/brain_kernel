@@ -26,6 +26,10 @@ export 'src/core/types.dart';
 export 'src/core/asset_category_map.dart';
 export 'src/core/canonical.dart';
 export 'src/core/canonical_storage_port.dart';
+// The filesystem implementation is exported separately: a host without a
+// disk names the port and supplies its own, and should not be handed
+// `dart:io` for doing so.
+export 'src/core/manifest_only_canonical_storage.dart';
 export 'src/core/undo_redo_stack.dart';
 export 'src/core/patch_pipeline.dart';
 export 'src/core/asset_validator.dart';
@@ -34,6 +38,14 @@ export 'src/core/sidecar/prefs.dart';
 export 'src/core/sidecar/chat_log.dart';
 export 'src/core/sidecar/history_log.dart';
 export 'src/core/sidecar/undo_log.dart';
+// Every sidecar above takes a store, so the type and the platform default
+// have to be nameable from outside the package. The port carries no import
+// of its own; the default answers null where there is no filesystem. The
+// browser adapter is not here — it reaches `dart:js_interop`, which does not
+// exist off the web compilers, and lives in `brain_kernel_web.dart`.
+export 'src/core/sidecar/store/sidecar_store.dart';
+export 'src/core/sidecar/store/default_sidecar_store.dart';
+export 'src/core/sidecar/store/file_sidecar_store.dart';
 
 // FEAT — proposal queue / asset extractor / BM25 / gold question /
 // asset touch observer (auto GUI sync helper).
