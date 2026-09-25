@@ -1,3 +1,55 @@
+## [0.2.2] - 2026-09-14
+
+### Added
+- `AccountKbRecordStore` and `KbAccountRecords` — a bundle's `kb` records in
+  account storage (`app/<appId>`, platform spec 20 §2) with this device's copy
+  underneath. Writes are conditioned on the account version last seen; while
+  the account is unreachable they wait on the device and go up in order when
+  it answers, and one whose base moved meanwhile is kept for `conflicts()`
+  instead of being forced. A refusal from the account (`KB_QUOTA_EXCEEDED`,
+  `KB_VALUE_TOO_LARGE`, a key or scope it does not accept) reaches the bundle
+  rather than waiting, and one met in the queue does not hold back the writes
+  behind it. Keys are stored as `kb/<key>` with every UTF-8 byte outside
+  `A-Z a-z 0-9 . _ / -` written as `:` and two hex digits (platform spec 20
+  §2.1.2) — `accountKeyOf` / `kbKeyOf` — and a key whose stored form is longer
+  than `accountKeyLimit` is refused with `KB_INVALID_KEY` before it is read,
+  written or queued.
+  `clearDeviceCopy` drops this device's copy and queue, never the account's
+  records.
+- `BundleKbStore` — a bundle's `host.kb` state as one implementation every
+  host forwards to. `get` · `list(prefix)` (ascending, string prefix) ·
+  `put` · `delete` · `conflicts` · `query`. Each key is a versioned record: a
+  write is made on the version the store last saw, and when the record moved
+  since, nothing is written and `{ok: false, conflict: {value}}` returns the
+  current value for the bundle to merge; `force` overwrites deliberately.
+  Keys are refused (`KB_INVALID_KEY`) when empty, starting with `/`,
+  containing `\` or NUL, or holding an empty, `.` or `..` segment; values
+  JSON cannot carry are refused (`KB_INVALID_VALUE`); `query` without a
+  knowledge engine is refused (`KB_QUERY_UNAVAILABLE`). `KbError.unavailable`
+  (`KB_UNAVAILABLE`) names a store that will not take the app's state. State is keyed by app
+  identity (`listing:<id>` / `bundle:<manifest.id>`).
+- `KbRecordStore` and `KvKbRecordStore` — records in the kernel
+  `KvStoragePort` under `app/<appId>/kb/<key>`, each segment percent-encoded
+  so any app id or key is a valid file name on every platform. A delete keeps
+  a tombstone so versions keep counting up.
+- `importDomainStorageNamespace` — moves a host's former `DomainStorage`
+  state into `kb` once, never overwriting and never deleting the source.
+
+### Fixed
+- `KvStoragePortAdapter` refuses a key with a `.` or `..` segment. A key is a
+  path under the root, so `a/../../x` wrote outside it and `a/x/../b` gave
+  one file a second name.
+- `KvStoragePortAdapter.keys(prefix)` walks only the directory the prefix's
+  last `/` names instead of the whole store. The keys returned are the same.
+
+### Deprecated
+- `DomainStorage` and `JsonFileDomainStorage` — a second store beside the
+  kernel's, with no versions. Use `BundleKbStore`.
+
+### Changed
+
+- Internal dependencies raised to the latest published: `mcp_bundle ^0.4.10`, `mcp_server ^2.2.3`, `flowbrain_core ^0.1.8`.
+
 ## [0.2.1] - 2026-08-13
 
 ### Added

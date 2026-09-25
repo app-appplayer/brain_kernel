@@ -39,9 +39,21 @@ class KvStoragePortAdapter implements mb.KvStoragePort {
   String? get workspaceId => _workspaceId;
   set workspaceId(String? value) => _workspaceId = value;
 
+  /// The file a key lives in. A key is a path under [rootDir], so a `..`
+  /// segment would read and write outside it, and a `.` or `..` that stays
+  /// inside would give one file two names — both refused rather than
+  /// normalised away.
   String _filePathFor(String key) {
     final clean = key.replaceAll(RegExp(r'^/+'), '');
-    return p.join(rootDir, '$clean.json');
+    if (clean.split(RegExp(r'[/\\]')).any((s) => s == '.' || s == '..')) {
+      throw ArgumentError('key has a . or .. segment: $key');
+    }
+    final root = p.normalize(p.absolute(rootDir));
+    final path = p.normalize(p.join(root, '$clean.json'));
+    if (!p.isWithin(root, path)) {
+      throw ArgumentError('key resolves outside the storage root: $key');
+    }
+    return path;
   }
 
   /// Throws [ArgumentError] when [key] targets a different workspace than
@@ -109,16 +121,31 @@ class KvStoragePortAdapter implements mb.KvStoragePort {
 
   @override
   Future<List<String>> keys({String? prefix}) async {
-    final base = Directory(rootDir);
-    if (!await base.exists()) return const <String>[];
+    final root = p.normalize(p.absolute(rootDir));
+    if (!await Directory(root).exists()) return const <String>[];
     final hasPrefix = prefix != null && prefix.isNotEmpty;
+    // Every key under a prefix lives below the directory its last `/` names,
+    // so the walk starts there instead of crossing the whole store — one
+    // bundle's listing no longer reads every other bundle's files. The string
+    // filter below still decides membership; this only narrows where to look.
+    var walkRoot = root;
+    if (hasPrefix) {
+      final cut = prefix.lastIndexOf('/');
+      if (cut > 0) {
+        final dir = p.normalize(p.join(root, prefix.substring(0, cut)));
+        if (!p.isWithin(root, dir)) return const <String>[];
+        walkRoot = dir;
+      }
+    }
+    final base = Directory(walkRoot);
+    if (!await base.exists()) return const <String>[];
     final out = <String>[];
     await for (final entity
         in base.list(recursive: true, followLinks: false)) {
       if (entity is! File) continue;
       if (!entity.path.endsWith('.json')) continue;
       final rel = p
-          .relative(entity.path, from: rootDir)
+          .relative(entity.path, from: root)
           .replaceAll(RegExp(r'\.json$'), '');
       final key = rel.replaceAll(p.separator, '/');
       // String-prefix contract (matches the in-memory reference

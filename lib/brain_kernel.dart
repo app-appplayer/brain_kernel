@@ -65,6 +65,8 @@ export 'src/infra/bundle/mcpb_packager.dart';
 export 'src/infra/embed/embedding_provider.dart';
 export 'src/infra/embed/embedding_runner.dart';
 export 'src/infra/domain_storage/domain_storage.dart';
+export 'src/infra/kb/bundle_kb_store.dart';
+export 'src/infra/kb/account_kb_record_store.dart';
 export 'src/infra/knowledge/bundle_registry.dart';
 export 'src/infra/knowledge/query_engine.dart';
 export 'src/infra/flowbrain/kv_storage_port_adapter.dart';

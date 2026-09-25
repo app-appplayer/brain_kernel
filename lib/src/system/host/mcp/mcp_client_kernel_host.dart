@@ -69,9 +69,7 @@ class McpClientKernelHost
       );
     }
 
-    final conn = _McpClientConnection(id: id, client: client);
-    _connections[id] = conn;
-    return conn;
+    return _register(_McpClientConnection(id: id, client: client));
   }
 
   /// Open a connection over a host-supplied **extension transport**
@@ -98,8 +96,21 @@ class McpClientKernelHost
     );
     await client.connect(transport);
 
-    final conn = _McpClientConnection(id: id, client: client);
-    _connections[id] = conn;
+    return _register(_McpClientConnection(id: id, client: client));
+  }
+
+  /// Lists [conn] and takes it off the list when it closes.
+  ///
+  /// Closing used to leave the entry behind, so [connections] answered "every
+  /// connection ever made" rather than "open now". A host counting who still
+  /// uses a device read an adopted link that a lending session opened once as
+  /// a live consumer for the rest of the run, and never let the device go
+  /// (measured 2026-09-17: a removed H723 card kept its serial port).
+  KernelClientConnection _register(_McpClientConnection conn) {
+    conn._onClosed = () {
+      if (identical(_connections[conn.id], conn)) _connections.remove(conn.id);
+    };
+    _connections[conn.id] = conn;
     return conn;
   }
 
@@ -110,9 +121,8 @@ class McpClientKernelHost
   }) async {
     final existing = _connections[id];
     if (existing != null && existing.isConnected) return existing;
-    final conn = _McpClientConnection(id: id, client: client, owned: false);
-    _connections[id] = conn;
-    return conn;
+    return _register(
+        _McpClientConnection(id: id, client: client, owned: false));
   }
 
   Future<cli.ClientTransport> _openTransport({
@@ -283,11 +293,16 @@ class _McpClientConnection implements KernelClientConnection {
 
   @override
   Future<void> close() async {
+    _onClosed?.call();
+    _onClosed = null;
     _removeListener?.call();
     _removeListener = null;
     await _updates.close();
     if (owned) client.disconnect();
   }
+
+  /// Set by the host that listed this connection; takes it off that list.
+  void Function()? _onClosed;
 }
 
 KernelToolResult _fromCliToolResult(cli.CallToolResult r) {

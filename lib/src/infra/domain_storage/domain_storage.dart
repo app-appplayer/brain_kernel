@@ -37,6 +37,13 @@ class DomainEntry {
 }
 
 /// Abstract surface — adapters back this with disk / db / graph.
+///
+/// Superseded by [BundleKbStore] over the kernel `KvStoragePort`: this port
+/// kept a second store beside the kernel's, outside account storage, with no
+/// versions to detect a write another device made. Kept only so a host can
+/// move existing state across with `importDomainStorageNamespace`.
+@Deprecated('Use BundleKbStore over the kernel KvStoragePort; '
+    'importDomainStorageNamespace moves existing state')
 abstract class DomainStorage {
   /// Write or overwrite the value at [key] inside [namespace].
   Future<void> put(String namespace, String key, DomainValue value);
@@ -69,6 +76,8 @@ abstract class DomainStorage {
 /// vibe_studio instances against the same config root) is out of
 /// scope for first-cut — hosts that need it should upgrade to a
 /// db-backed adapter.
+@Deprecated('Use BundleKbStore over the kernel KvStoragePort; '
+    'importDomainStorageNamespace moves existing state')
 class JsonFileDomainStorage implements DomainStorage {
   JsonFileDomainStorage({required this.rootDir});
 
