@@ -168,12 +168,12 @@ class KernelApp {
       opsRuntime: opsRuntime,
     );
     await wiring.boot();
-    final registry = KnowledgeBundleRegistry(
-      storageDir: bundleRegistryStorageDir ?? '.',
-    );
-    if (bundleRegistryStorageDir != null) {
-      await registry.load();
-    }
+    // No directory (a browser host): the list lives in memory and the
+    // filesystem is never touched — not at boot, not on the first query.
+    final registry = bundleRegistryStorageDir == null
+        ? KnowledgeBundleRegistry.inMemory()
+        : KnowledgeBundleRegistry(storageDir: bundleRegistryStorageDir);
+    await registry.load();
     final engine = KnowledgeQueryEngine(registry: registry);
     return KernelApp(
       workspaceId: workspaceId,

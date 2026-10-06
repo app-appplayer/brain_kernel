@@ -1,3 +1,11 @@
+## [0.2.3] - 2026-10-06
+
+### Added
+- `KnowledgeBundleRegistry.inMemory()` — a knowledge-bundle registry kept in memory only, for a host with no directory to keep it in (a browser). It never touches the filesystem.
+
+### Fixed
+- `KernelApp.boot` without `bundleRegistryStorageDir` no longer reaches the filesystem. Boot skipped loading the registry, but the first knowledge query (or registration) loaded it lazily from `./knowledge_bundles.json`, which throws `Unsupported operation` in a browser. With no directory the registry is now in memory.
+
 ## [0.2.2] - 2026-09-14
 
 ### Added

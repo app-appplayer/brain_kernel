@@ -48,7 +48,16 @@ class KnowledgeBundleEntry {
 }
 
 class KnowledgeBundleRegistry {
-  KnowledgeBundleRegistry({required this.storageDir});
+  KnowledgeBundleRegistry({required this.storageDir}) : _persistent = true;
+
+  /// A registry kept in memory only — for a host with no directory to keep
+  /// it in (a browser). It starts empty and never touches the filesystem;
+  /// entries live as long as the process.
+  KnowledgeBundleRegistry.inMemory()
+      : storageDir = '',
+        _persistent = false;
+
+  final bool _persistent;
 
   /// Directory the registry's snapshot file lives in. Typically
   /// `~/.config/app_builder/`. The file inside is
@@ -64,6 +73,10 @@ class KnowledgeBundleRegistry {
   bool _loaded = false;
 
   Future<void> load() async {
+    if (!_persistent) {
+      _loaded = true;
+      return;
+    }
     final file = File(_filePath);
     if (!await file.exists()) {
       _entries = const <KnowledgeBundleEntry>[];
@@ -128,6 +141,7 @@ class KnowledgeBundleRegistry {
   }
 
   Future<void> _persist() async {
+    if (!_persistent) return;
     final file = File(_filePath);
     await file.parent.create(recursive: true);
     final tmp = File('${file.path}.tmp');
