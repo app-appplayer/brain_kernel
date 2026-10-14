@@ -79,13 +79,16 @@ class _RecordingClient implements Client {
   final List<String> unsubscribed = <String>[];
 
   @override
-  Future<void> subscribeResource(String uri) async {
+  Future<void> subscribeResource(String uri,
+      {Map<String, dynamic>? meta, RequestOptions? options}) async {
     if (failSubscribe) throw StateError('nope');
     subscribed.add(uri);
   }
 
   @override
-  Future<void> unsubscribeResource(String uri) async => unsubscribed.add(uri);
+  Future<void> unsubscribeResource(String uri,
+          {Map<String, dynamic>? meta, RequestOptions? options}) async =>
+      unsubscribed.add(uri);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

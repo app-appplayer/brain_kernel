@@ -1,3 +1,12 @@
+## [0.3.0] - 2026-10-13
+
+### Breaking
+- Built on MCP 3.0: `mcp_client` · `mcp_server` · `mcp_llm` ^3.0.0 and `mcp_bundle` ^0.4.11. The kernel's MCP server answers prompts with `PromptMessage` and resources with `ResourceContents` (the 3.0 model types).
+- `KbAccountRecords.write` takes a named `unit` — the workspace unit chosen when the write was made (platform spec 24 §6.2). A class that implements `KbAccountRecords` adds the parameter.
+
+### Added
+- `AccountKbRecordStore(unitOf:)` — reads the workspace unit when a write is made; a queued write keeps the unit it was made in (platform spec 20 §2.9).
+
 ## [0.2.3] - 2026-10-06
 
 ### Added

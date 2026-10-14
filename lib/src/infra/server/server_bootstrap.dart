@@ -500,7 +500,7 @@ mcp.CallToolResult _toMcpToolResult(KernelToolResult r) {
 mcp.GetPromptResult _toMcpGetPromptResult(KernelGetPromptResult r) {
   return mcp.GetPromptResult(
     description: r.description ?? '',
-    messages: <mcp.Message>[
+    messages: <mcp.PromptMessage>[
       for (final m in r.messages)
         mcp.Message(role: m.role, content: _toMcpContent(m.content)),
     ],
@@ -518,7 +518,7 @@ mcp.Content _toMcpContent(KernelContent c) {
 
 mcp.ReadResourceResult _toMcpReadResourceResult(KernelReadResourceResult r) {
   return mcp.ReadResourceResult(
-    contents: <mcp.ResourceContentInfo>[
+    contents: <mcp.ResourceContents>[
       for (final e in r.contents)
         mcp.ResourceContentInfo(
           uri: e.uri,

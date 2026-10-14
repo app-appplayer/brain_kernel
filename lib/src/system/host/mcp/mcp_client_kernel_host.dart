@@ -260,7 +260,7 @@ class _McpClientConnection implements KernelClientConnection {
       for (final t in tools)
         KernelToolDescriptor(
           name: t.name,
-          description: t.description,
+          description: t.description ?? '',
           inputSchema: t.inputSchema,
         ),
     ];
@@ -320,7 +320,7 @@ KernelContent _fromCliContent(cli.Content c) {
   }
   if (c is cli.ImageContent) {
     return KernelImageContent(
-      data: c.data ?? '',
+      data: c.data,
       mimeType: c.mimeType,
     );
   }

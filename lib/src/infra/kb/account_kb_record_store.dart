@@ -36,8 +36,16 @@ abstract interface class KbAccountRecords {
   Future<List<KbRecord>> list(String appId, String prefix);
 
   /// Writes [value]; answers the new version. Unconditional when [ifMatch] is
-  /// null.
-  Future<String> write(String appId, String key, Object? value, {String? ifMatch});
+  /// null. [unit] is the workspace unit chosen when the write was made
+  /// (platform spec 24 §6.2) — the account stamps the record's unit from it on
+  /// first write; null leaves it to the account.
+  Future<String> write(
+    String appId,
+    String key,
+    Object? value, {
+    String? ifMatch,
+    String? unit,
+  });
 
   /// Removes [key]; answers whether a record was there.
   Future<bool> remove(String appId, String key, {String? ifMatch});
@@ -58,9 +66,14 @@ class KbAccountConflict implements Exception {
 const String _localVersionPrefix = 'local:';
 
 class AccountKbRecordStore implements KbRecordStore {
-  AccountKbRecordStore({required this.account, required this.kv});
+  AccountKbRecordStore({required this.account, required this.kv, this.unitOf});
 
   final KbAccountRecords account;
+
+  /// The workspace unit chosen right now, read when a write is made. A queued
+  /// write keeps the unit it was made in, so a later change of unit does not
+  /// move it (platform spec 20 §2.9).
+  final String? Function()? unitOf;
 
   /// This device's key-value store — the same one [KvKbRecordStore] uses.
   final mb.KvStoragePort kv;
@@ -230,7 +243,13 @@ class AccountKbRecordStore implements KbRecordStore {
           await account.remove(appId, _accountKey(key), ifMatch: base);
           await _remember(appId, key, null);
         } else {
-          final version = await account.write(appId, _accountKey(key), raw['value'], ifMatch: base);
+          final version = await account.write(
+            appId,
+            _accountKey(key),
+            raw['value'],
+            ifMatch: base,
+            unit: raw['unit'] as String?,
+          );
           await _remember(appId, key, KbRecord(key: key, value: raw['value'], version: version));
         }
         await kv.remove(_path(appId, 'kbq', key));
@@ -303,6 +322,12 @@ class AccountKbRecordStore implements KbRecordStore {
             byKey[key] = record;
             await _remember(appId, key, record);
           }
+          // What the account no longer lists — removed elsewhere, or no
+          // longer this person's to read — leaves this device's copy too, so
+          // it does not come back while the account is out of reach.
+          for (final key in await _keysIn(appId, 'kbr', prefix)) {
+            if (!byKey.containsKey(key)) await _remember(appId, key, null);
+          }
         } catch (e) {
           if (!_isOffline(e)) rethrow;
           for (final key in await _keysIn(appId, 'kbr', prefix)) {
@@ -335,8 +360,9 @@ class AccountKbRecordStore implements KbRecordStore {
         final stored = _accountKey(key);
         final ifMatch = await _ifMatch(appId, key, expected, force);
         final before = await _remembered(appId, key);
+        final unit = unitOf?.call();
         try {
-          final version = await account.write(appId, stored, value, ifMatch: ifMatch);
+          final version = await account.write(appId, stored, value, ifMatch: ifMatch, unit: unit);
           await _remember(appId, key, KbRecord(key: key, value: value, version: version));
           await kv.remove(_path(appId, 'kbq', key));
           await kv.remove(_path(appId, 'kbc', key));
@@ -346,7 +372,15 @@ class AccountKbRecordStore implements KbRecordStore {
           return KbConflict(_rekey(key, conflict.current));
         } catch (e) {
           if (!_isOffline(e)) rethrow;
-          return _queue(appId, key, value: value, deleted: false, ifMatch: ifMatch, existed: before != null);
+          return _queue(
+            appId,
+            key,
+            value: value,
+            deleted: false,
+            ifMatch: ifMatch,
+            existed: before != null,
+            unit: unit,
+          );
         }
       });
 
@@ -385,6 +419,7 @@ class AccountKbRecordStore implements KbRecordStore {
     required bool deleted,
     required String? ifMatch,
     required bool existed,
+    String? unit,
   }) async {
     final waiting = await _pending(appId, key);
     // A second offline write to the same key keeps the first one's base: the
@@ -396,6 +431,7 @@ class AccountKbRecordStore implements KbRecordStore {
       'deleted': deleted,
       'base': base,
       'seq': seq,
+      if (unit != null) 'unit': unit,
     });
     return KbWritten(version: deleted ? null : '$_localVersionPrefix$seq', existed: existed);
   }

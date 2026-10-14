@@ -45,9 +45,16 @@ class _FakeAccount implements KbAccountRecords {
   }
 
   @override
-  Future<String> write(String appId, String key, Object? value, {String? ifMatch}) async {
+  Future<String> write(
+    String appId,
+    String key,
+    Object? value, {
+    String? ifMatch,
+    String? unit,
+  }) async {
     _reach();
     final kbKey = AccountKbRecordStore.kbKeyOf(key)!;
+    units[kbKey] = unit;
     final current = _stored(kbKey);
     if (ifMatch != null && current?.version != ifMatch) throw KbAccountConflict(current);
     records[kbKey] = (value, ++_next);
@@ -63,6 +70,9 @@ class _FakeAccount implements KbAccountRecords {
     return records.remove(kbKey) != null;
   }
 
+  /// The unit each key was last written with.
+  final Map<String, String?> units = {};
+
   /// Another device writing straight to the account.
   void writeFromElsewhere(String key, Object? value) => records[key] = (value, ++_next);
 }
@@ -70,19 +80,31 @@ class _FakeAccount implements KbAccountRecords {
 /// An account that is reachable and refuses one key it does not accept.
 class _KeyRefusingAccount extends _FakeAccount {
   @override
-  Future<String> write(String appId, String key, Object? value, {String? ifMatch}) async {
+  Future<String> write(
+    String appId,
+    String key,
+    Object? value, {
+    String? ifMatch,
+    String? unit,
+  }) async {
     _reach();
     if (AccountKbRecordStore.kbKeyOf(key) == 'bad') {
       throw const KbError(KbError.invalidKey, 'invalid storage key');
     }
-    return super.write(appId, key, value, ifMatch: ifMatch);
+    return super.write(appId, key, value, ifMatch: ifMatch, unit: unit);
   }
 }
 
 /// An account that is reachable and full.
 class _RefusingAccount extends _FakeAccount {
   @override
-  Future<String> write(String appId, String key, Object? value, {String? ifMatch}) async =>
+  Future<String> write(
+    String appId,
+    String key,
+    Object? value, {
+    String? ifMatch,
+    String? unit,
+  }) async =>
       throw const KbError(KbError.quotaExceeded, 'account storage is full');
 }
 
@@ -122,6 +144,62 @@ void main() {
       expect(account.records['a']!.$1, 'theirs');
       expect(await kb.put('a', 2, force: true), {'ok': true});
       expect(account.records['a']!.$1, 2);
+    });
+  });
+
+  group('workspace unit (platform spec 20 §2.9)', () {
+    late String? chosen;
+
+    setUp(() {
+      chosen = 'cell-a';
+      kb = BundleKbStore(
+        appId: appId,
+        records: AccountKbRecordStore(account: account, kv: kv, unitOf: () => chosen),
+      );
+    });
+
+    test('a write carries the unit chosen when it was made', () async {
+      await kb.put('attendance/1', 'here');
+      expect(account.units['attendance/1'], 'cell-a');
+    });
+
+    test('a queued write keeps its unit when the choice changes before it goes up', () async {
+      account.online = false;
+      await kb.put('attendance/1', 'here');
+      chosen = 'cell-b';
+      account.online = true;
+
+      expect(await kb.conflicts(), isEmpty);
+      expect(account.records['attendance/1']!.$1, 'here');
+      expect(account.units['attendance/1'], 'cell-a');
+    });
+  });
+
+  group('records the account stops listing', () {
+    test('leave the device copy, so they do not come back offline', () async {
+      await kb.put('notes/a', 1);
+      await kb.put('notes/b', 2);
+      expect(await kb.list('notes/'), hasLength(2));
+
+      // Removed elsewhere, or no longer this person's to read.
+      account.records.remove('notes/b');
+      expect(await kb.list('notes/'), [
+        {'key': 'notes/a', 'value': 1},
+      ]);
+
+      account.online = false;
+      expect(await kb.list('notes/'), [
+        {'key': 'notes/a', 'value': 1},
+      ]);
+      expect(await kb.get('notes/b'), isNull);
+    });
+
+    test('outside the listed prefix stay', () async {
+      await kb.put('notes/a', 1);
+      await kb.put('other/x', 2);
+      await kb.list('notes/');
+      account.online = false;
+      expect(await kb.get('other/x'), 2);
     });
   });
 
