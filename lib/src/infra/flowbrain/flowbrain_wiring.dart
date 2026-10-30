@@ -16,6 +16,9 @@ library;
 import 'package:flowbrain_core/flowbrain_core.dart' as fb;
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 
+import 'host_tools_mcp_port.dart';
+import 'sampling_llm_port.dart';
+
 class FlowBrainWiring {
   FlowBrainWiring({
     required this.workspaceId,
@@ -23,6 +26,9 @@ class FlowBrainWiring {
     this.llmProviders = const <String, mb.LlmPort>{},
     this.fallbackLlm,
     this.opsRuntime,
+    this.factGraph,
+    this.hostTools,
+    this.sampling,
   });
 
   /// Workspace identifier — typically `'knowledge_builder'` or a
@@ -41,6 +47,18 @@ class FlowBrainWiring {
   /// Optional OpsRuntime for bundle round-tripping (load-validate-export
   /// cycles). Leave null until the bundle ops flow is wired.
   final fb.OpsRuntime? opsRuntime;
+
+  /// Optional L0 runtime built by the host over its own (durable) storage.
+  /// Null keeps the default: an in-memory graph.
+  final fb.FactGraphRuntime? factGraph;
+
+  /// How a skill's `tool` steps reach the host's own tools. Null keeps the
+  /// stub port (every call answers with a made-up result).
+  final KernelHostToolInvoker? hostTools;
+
+  /// The connected client's model, used by a skill's `llm` step when the host
+  /// has no provider of its own. Null keeps the previous choice.
+  final KernelSampling? sampling;
 
   fb.KnowledgeSystem? _system;
   bool _booted = false;
@@ -81,16 +99,25 @@ class FlowBrainWiring {
     // host `flowbrain.llmProviders` continues to drive agent dispatch;
     // SkillPorts only handles in-skill LLM steps (which can be stubbed
     // until a real adapter is wired).
-    final skillFallbackLlm = fallbackLlm ??
-        (llmProviders.isNotEmpty
-            ? llmProviders.values.first
-            : mb.StubLlmPort());
+    final skillFallbackLlm = sampling != null
+        ? SamplingLlmPort(
+            internal: () =>
+                fallbackLlm ??
+                (llmProviders.isNotEmpty ? llmProviders.values.first : null),
+            sampling: sampling!,
+          )
+        : fallbackLlm ??
+            (llmProviders.isNotEmpty
+                ? llmProviders.values.first
+                : mb.StubLlmPort());
     final skillRegistry = fb.MemorySkillRegistry();
     final skillRuntime = fb.SkillRuntime(
       registry: skillRegistry,
       ports: fb.SkillPorts(
         llm: skillFallbackLlm,
-        mcp: mb.StubMcpPort(),
+        mcp: hostTools == null
+            ? mb.StubMcpPort()
+            : HostToolsMcpPort(hostTools!),
       ),
     );
 
@@ -106,8 +133,13 @@ class FlowBrainWiring {
     // L3 PhilosophyEngine — KV-backed ethos store on the shared
     // KvStoragePort. `initialize()` seeds stock ethos when empty
     // (autoSeedEthos: true is default).
+    // Feedback history and evolution proposals ride the same KV store as the
+    // ethos, so a host with a durable KV keeps them across restarts (they
+    // were an engine-memory list before).
     final philosophyEngine = fb.PhilosophyEngine(
       ethosStore: ethosStore,
+      feedbackHistory: fb.KvFeedbackHistoryStore(storage: kvStoragePort),
+      proposals: fb.KvProposalStore(storage: kvStoragePort),
     );
     await philosophyEngine.initialize();
 
@@ -136,6 +168,9 @@ class FlowBrainWiring {
         );
 
     _system = fb.KnowledgeSystem.withAgents(
+      // Evolution proposals on: the stock config drops every review's
+      // feedback (platform spec 12 §4). They are applied only by a person.
+      config: fb.KnowledgeConfig.withPhilosophyEvolution,
       infraPorts: infra,
       llm: fallbackLlm ??
           (llmProviders.isNotEmpty ? llmProviders.values.first : null),
@@ -144,6 +179,7 @@ class FlowBrainWiring {
       profileRuntime: profileRuntime,
       philosophyEngine: philosophyEngine,
       opsRuntime: effectiveOpsRuntime,
+      factGraph: factGraph,
     );
     _booted = true;
   }

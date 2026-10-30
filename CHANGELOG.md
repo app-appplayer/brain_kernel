@@ -1,3 +1,33 @@
+## [0.3.1] - 2026-10-31
+
+### Added
+
+- `bk.skill.execute` takes an optional `procedureId` and runs that procedure of the skill; without it the first runs, and an unknown id fails the run.
+
+- `KernelApp.boot(sampling:)` and `SamplingLlmPort` — a skill's `llm` step uses the provider the host configured (looked up on every call, so one set after boot counts), and otherwise the connected client's model through `sampling/createMessage`. A client that cannot sample fails the step; it does not answer with an empty string (platform spec 30 §8). Without `sampling` the previous choice stays.
+
+- `PhilosophyGate`, `KernelApp.philosophyGate` and `KernelApp.boot(confirmSoftViolation:)` — `bk.skill.execute` checks the active ethos before a skill starts: a hard prohibition stops it; a soft one goes to the host's confirmation, which must be able to say no (without one the run goes on and the violations come back as `warnings`); no ethos or no engine checks nothing; a check that fails for another reason stops the run (platform spec 12 §4).
+
+- `SkillScopes`, `KernelApp.registerSkill(skill, bundleId:, ownerScope:)` and `KernelApp.boot(skillScopeChain:)` — a skill can have an owner scope; a call sees and runs it only when the owner is in the call's scope chain (its own scope, then those above, built by the host). `bk.skill.list/get/execute` take an optional `scopeId`. A skill with no owner stays global (platform spec 30 §8).
+
+- `KernelApp.boot(hostTools:)` and `HostToolsMcpPort` — a skill's `tool` step calls the host's own tools (its dispatcher, where `bk.*` and the host's capabilities are registered) instead of the stub port that answered every call with a made-up result. Without `hostTools` nothing changes (platform spec 30 §8).
+- `KernelToolDescriptor.destructiveHint` and `.readOnlyHint` — the hints a remote MCP server reports for a tool, carried by the MCP client host. A host registers a tool the server marks destructive behind its human-confirm gate.
+- `ToolListChangeSource` (`package:brain_kernel/mcp_host.dart`) — a connection that reports its server's tool list changing; the MCP client host's connections implement it so a host can follow the list on its own.
+- The MCP client host passes a stdio connection's `options.env` to the process.
+- `KernelApp.boot(factGraph:)` — the L0 fact graph the kernel writes to (platform spec 30). A host that keeps knowledge across restarts builds a `FactGraphRuntime` over a durable store and hands it here; null keeps the in-memory graph.
+- The philosophy engine's feedback history and evolution proposals are kept in the kernel key/value store (they were an engine-memory list), so a host with a durable KV keeps them across restarts.
+
+### Fixed
+
+- `bk.skill.execute` no longer answers `ok: true` for a skill that failed. The skill runtime reports a failed skill as a result with the error in its metadata, not as an exception.
+
+- A bundle skill's step graph is carried into the skill runtime: a forward `next` becomes `onSuccess`, `onError` becomes `onFailure`. One the runtime cannot run as written (several `next`, a way back, an unknown step id) is refused at registration instead of running in a straight line. `HostToolsMcpPort` throws when a host tool fails, so the step's failure path sees it.
+
+- A bundle skill with a step the skill runtime does not execute (`branch`, `loop`, `output`) is refused when it is registered and reported in the activation errors. It was dropped silently and the skill ended as a success after running no step.
+
+- A bundle skill's `prompt` step runs. The bundle names its model step `prompt` and the skill runtime executes `llm`, so the step was dropped and the skill answered with nothing; it is now turned into `llm` when the skill is registered.
+- Philosophy evolution is on. The stock `KnowledgeConfig` leaves `enableEvolution` off, so `PhilosophyFacade.proposeFeedback` answered null for every review and no proposal was ever made (platform spec 12 §4). Proposals are still applied only by a person.
+
 ## [0.3.0] - 2026-10-13
 
 ### Breaking

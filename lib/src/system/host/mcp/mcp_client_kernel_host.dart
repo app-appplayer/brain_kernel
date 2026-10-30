@@ -15,6 +15,7 @@ import '../kernel_envelope.dart';
 import 'extension_transport_connect.dart';
 import 'shared_notifications.dart';
 import 'shared_subscriptions.dart';
+import 'tool_list_change_source.dart';
 
 class McpClientKernelHost
     implements KernelClientHost, ExtensionTransportConnect {
@@ -143,9 +144,16 @@ class McpClientKernelHost
         }
         final args = (options['args'] as List?)?.cast<String>() ??
             const <String>[];
+        // Variables for the program (a server's own settings, a secret the
+        // person kept in the vault). Without them a registration that names
+        // one starts the program without it, and nothing says so.
+        final env = (options['env'] as Map?)?.map(
+          (k, v) => MapEntry('$k', '$v'),
+        );
         return cli.StdioClientTransport.create(
           command: command,
           arguments: args,
+          environment: env,
         );
       case KernelTransportKind.streamableHttp:
         if (endpoint == null) {
@@ -194,7 +202,8 @@ class McpClientKernelHost
   }
 }
 
-class _McpClientConnection implements KernelClientConnection {
+class _McpClientConnection
+    implements KernelClientConnection, ToolListChangeSource {
   _McpClientConnection({
     required this.id,
     required this.client,
@@ -213,7 +222,22 @@ class _McpClientConnection implements KernelClientConnection {
         if (uri is String && !_updates.isClosed) _updates.add(uri);
       },
     );
+    _removeToolsListener = SharedClientNotifications.add(
+      client,
+      'notifications/tools/list_changed',
+      (_) async {
+        if (!_toolsChanged.isClosed) _toolsChanged.add(null);
+      },
+    );
   }
+
+  void Function()? _removeToolsListener;
+
+  final StreamController<void> _toolsChanged =
+      StreamController<void>.broadcast();
+
+  @override
+  Stream<void> get toolsChanged => _toolsChanged.stream;
 
   void Function()? _removeListener;
 
@@ -262,6 +286,8 @@ class _McpClientConnection implements KernelClientConnection {
           name: t.name,
           description: t.description ?? '',
           inputSchema: t.inputSchema,
+          destructiveHint: t.annotations?.destructiveHint,
+          readOnlyHint: t.annotations?.readOnlyHint,
         ),
     ];
   }
@@ -297,6 +323,9 @@ class _McpClientConnection implements KernelClientConnection {
     _onClosed = null;
     _removeListener?.call();
     _removeListener = null;
+    _removeToolsListener?.call();
+    _removeToolsListener = null;
+    await _toolsChanged.close();
     await _updates.close();
     if (owned) client.disconnect();
   }

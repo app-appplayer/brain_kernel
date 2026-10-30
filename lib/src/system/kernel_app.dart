@@ -33,6 +33,10 @@ import 'package:meta/meta.dart';
 import '../core/sidecar/chat_log.dart';
 import '../infra/chat/agent_chat_controller.dart';
 import '../infra/flowbrain/flowbrain_wiring.dart';
+import '../infra/flowbrain/host_tools_mcp_port.dart';
+import '../infra/flowbrain/sampling_llm_port.dart';
+import 'philosophy_gate.dart';
+import 'skill_scopes.dart';
 import '../infra/flowbrain/llm_port_adapter.dart';
 import '../infra/knowledge/bundle_registry.dart';
 import '../infra/knowledge/query_engine.dart';
@@ -79,7 +83,11 @@ class KernelApp {
     required this.chatLogDir,
     this.serverHostFactory,
     this.clientHost,
-  }) : _wiring = wiring;
+    SkillScopes? skillScopes,
+    SoftViolationConfirm? confirmSoftViolation,
+  })  : _wiring = wiring,
+        skillScopes = skillScopes ?? SkillScopes(),
+        _confirmSoftViolation = confirmSoftViolation;
 
   /// Caller-supplied workspace identifier — propagates into the
   /// [FlowBrainWiring] and the bundle namespace defaults.
@@ -128,7 +136,29 @@ class KernelApp {
   /// never call remote servers leave it null.
   final KernelClientHost? clientHost;
 
+  /// Owners of scoped skills (platform spec 30 §8).
+  final SkillScopes skillScopes;
+
+  final SoftViolationConfirm? _confirmSoftViolation;
+
+  /// The check a skill run passes before it starts (platform spec 12 §4).
+  late final PhilosophyGate philosophyGate =
+      PhilosophyGate(() => system.philosophy, confirm: _confirmSoftViolation);
+
   fb.KnowledgeSystem get system => _wiring.system;
+
+  /// Register a bundle skill under [bundleId]. With [ownerScope] only calls
+  /// whose scope chain holds it can see or run the skill; without, it is global.
+  Future<String> registerSkill(
+    mb.SkillModule skill, {
+    required String bundleId,
+    String? ownerScope,
+  }) async {
+    final id = await BundleActivation(system: system, bundleId: bundleId)
+        .registerSkill(skill);
+    skillScopes.own(id, ownerScope);
+    return id;
+  }
 
   BundleActivationRegistry get activationRegistry =>
       BundleActivationRegistry.instance;
@@ -150,6 +180,11 @@ class KernelApp {
     Map<String, LlmPortAdapter> llmProviders = const <String, LlmPortAdapter>{},
     mb.LlmPort? fallbackLlm,
     fb.OpsRuntime? opsRuntime,
+    fb.FactGraphRuntime? factGraph,
+    KernelHostToolInvoker? hostTools,
+    SkillScopeChain? skillScopeChain,
+    SoftViolationConfirm? confirmSoftViolation,
+    KernelSampling? sampling,
     String? bundleRegistryStorageDir,
     String chatLogDir = '.',
     ConfigPort config = NullConfig.instance,
@@ -166,6 +201,9 @@ class KernelApp {
       llmProviders: sessions.providers,
       fallbackLlm: fallbackLlm,
       opsRuntime: opsRuntime,
+      factGraph: factGraph,
+      hostTools: hostTools,
+      sampling: sampling,
     );
     await wiring.boot();
     // No directory (a browser host): the list lives in memory and the
@@ -188,6 +226,8 @@ class KernelApp {
       chatLogDir: chatLogDir,
       serverHostFactory: serverHostFactory,
       clientHost: clientHost,
+      skillScopes: SkillScopes(chainOf: skillScopeChain),
+      confirmSoftViolation: confirmSoftViolation,
     );
   }
 

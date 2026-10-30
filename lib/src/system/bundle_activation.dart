@@ -39,6 +39,7 @@ import 'dart:convert';
 import 'package:flowbrain_core/flowbrain_core.dart' as fb;
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:mcp_knowledge_ops/mcp_knowledge_ops.dart' as ops;
+import 'package:mcp_skill/mcp_skill.dart' as ms;
 
 import '../infra/flowbrain/flow_definition_workflow.dart';
 import 'host/kernel_envelope.dart';
@@ -272,50 +273,20 @@ class BundleActivation {
 
   // ── Per-category registration (public — host wrappers call these) ─
 
-  /// mb.SkillModule → SkillBundle (manifest + best-effort sequential
-  /// procedures). mb's graph-shaped steps (`step.next[]`) are
-  /// flattened to mcp_skill's sequential `order` since the runtime
-  /// model is sequential.
+  /// mb.SkillModule → SkillBundle through `mcp_skill`'s conversion. A module
+  /// the runtime cannot run as written is refused here, not run differently.
   Future<String> registerSkill(mb.SkillModule s) async {
     final runtime = system.skillRuntime;
     if (runtime == null) {
       throw StateError('SkillRuntime not configured');
     }
     final exposedId = '$bundleId.${s.id}';
-    final manifest = fb.SkillManifest(
+    // The skill runtime owns the conversion and refuses what it cannot run
+    // (an InvalidProcedureException naming the procedure and step).
+    final bundle = ms.skillBundleFromModule(
+      s,
       id: exposedId,
-      name: s.name,
-      version: s.version,
-      provider: s.provider ?? bundleId,
-      description: s.description,
-      capabilities: s.capabilities.isEmpty ? null : s.capabilities,
-    );
-    final procedures = <fb.Procedure>[];
-    for (final proc in s.procedures) {
-      try {
-        final stepJson = <Map<String, dynamic>>[];
-        for (var i = 0; i < proc.steps.length; i++) {
-          final st = proc.steps[i];
-          stepJson.add(<String, dynamic>{
-            'id': st.id,
-            'order': i + 1,
-            'name': st.id,
-            'action': st.action.toJson(),
-            if (st.condition != null) 'condition': st.condition,
-          });
-        }
-        procedures.add(fb.Procedure.fromJson(<String, dynamic>{
-          'id': proc.id,
-          'name': proc.name,
-          'description': proc.description,
-          'steps': stepJson,
-        }));
-      } catch (_) {/* skip per-procedure failure */}
-    }
-    final bundle = fb.SkillBundle(
-      schemaVersion: '0.1.0',
-      manifest: manifest,
-      procedures: procedures,
+      provider: bundleId,
     );
     await runtime.registry.registerSkill(bundle);
     return exposedId;

@@ -61,11 +61,22 @@ class KernelToolDescriptor {
     required this.name,
     required this.description,
     this.inputSchema,
+    this.destructiveHint,
+    this.readOnlyHint,
   });
 
   final String name;
   final String description;
   final Map<String, dynamic>? inputSchema;
+
+  /// The server's own claim that the tool changes or deletes things
+  /// (`annotations.destructiveHint`). A hint, not a guarantee — a host that
+  /// gates on it still decides what an absent hint means. Null when the
+  /// server did not say.
+  final bool? destructiveHint;
+
+  /// The server's claim that the tool only reads (`annotations.readOnlyHint`).
+  final bool? readOnlyHint;
 }
 
 /// Resource descriptor returned by `resources/list` on a remote server.

@@ -71,6 +71,8 @@ export 'src/infra/knowledge/bundle_registry.dart';
 export 'src/infra/knowledge/query_engine.dart';
 export 'src/infra/flowbrain/kv_storage_port_adapter.dart';
 export 'src/infra/flowbrain/flowbrain_wiring.dart';
+export 'src/infra/flowbrain/host_tools_mcp_port.dart';
+export 'src/infra/flowbrain/sampling_llm_port.dart';
 export 'src/infra/flowbrain/flowbrain_runtime_probe.dart';
 export 'src/infra/flowbrain/llm_port_adapter.dart';
 export 'src/infra/flowbrain/flow_definition_workflow.dart';
@@ -90,6 +92,8 @@ export 'src/system/bundle_activation.dart';
 // do not need (e.g. AppPlayer in-process runs with every port at its
 // `Null*` default).
 export 'src/system/kernel_app.dart';
+export 'src/system/philosophy_gate.dart';
+export 'src/system/skill_scopes.dart';
 export 'src/system/kernel_endpoint.dart';
 export 'src/system/ports/config_port.dart';
 export 'src/system/ports/ui_resource_port.dart';
