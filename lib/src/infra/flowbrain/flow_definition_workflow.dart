@@ -26,8 +26,14 @@
 ///   - parallel / loop / unknown → declared-order fallback
 library;
 
+import 'dart:convert';
+
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:mcp_knowledge_ops/mcp_knowledge_ops.dart' as fb;
+
+import 'package:flowbrain_core/flowbrain_core.dart' show FlowStepRef;
+
+import '../../system/host/kernel_envelope.dart';
 
 /// Function signatures the host injects so each step type knows
 /// where to dispatch.
@@ -222,7 +228,24 @@ class FlowDefinitionWorkflow
 
   // ── Step dispatch ───────────────────────────────────────────────
 
+  /// Runs one step as a flow step: whatever an agent produces while it runs
+  /// carries the flow, run and step it came from (spec 12 §0.5).
   Future<Map<String, dynamic>?> _dispatchStep(
+    mb.FlowStep step,
+    Map<String, dynamic> state,
+    fb.WorkflowContext context,
+  ) =>
+      FlowStepRef.run(
+        FlowStepRef(
+          kind: 'workflow',
+          flowId: definition.id,
+          runId: context.runId,
+          stepId: step.id,
+        ),
+        () => _dispatchStepInner(step, state, context),
+      );
+
+  Future<Map<String, dynamic>?> _dispatchStepInner(
     mb.FlowStep step,
     Map<String, dynamic> state,
     fb.WorkflowContext context,
@@ -230,13 +253,13 @@ class FlowDefinitionWorkflow
     switch (step.type) {
       case mb.StepType.action:
       case mb.StepType.api:
-        return _execTool(step);
+        return _execTool(step, state);
       case mb.StepType.skill:
-        return _execSkill(step);
+        return _execSkill(step, state);
       case mb.StepType.llm:
-        return _execLlm(step);
+        return _execLlm(step, state);
       case mb.StepType.flow:
-        return _execFlow(step);
+        return _execFlow(step, state);
       case mb.StepType.wait:
         return _execWait(step);
       case mb.StepType.setVar:
@@ -258,7 +281,8 @@ class FlowDefinitionWorkflow
     }
   }
 
-  Future<Map<String, dynamic>> _execTool(mb.FlowStep step) async {
+  Future<Map<String, dynamic>> _execTool(
+      mb.FlowStep step, Map<String, dynamic> state) async {
     final fn = toolDispatcher;
     if (fn == null) {
       throw StateError('toolDispatcher not wired (step.id=${step.id})');
@@ -267,13 +291,16 @@ class FlowDefinitionWorkflow
     if (tool == null || tool.isEmpty) {
       throw FormatException('step.config.tool required (step.id=${step.id})');
     }
-    final args = (step.config['args'] as Map?)?.cast<String, dynamic>() ??
-        const <String, dynamic>{};
+    final args = await _renderMap(
+        (step.config['args'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+        state);
     final result = await fn(tool, args);
     return <String, dynamic>{'result': result};
   }
 
-  Future<Map<String, dynamic>> _execSkill(mb.FlowStep step) async {
+  Future<Map<String, dynamic>> _execSkill(
+      mb.FlowStep step, Map<String, dynamic> state) async {
     final fn = skillRunner;
     if (fn == null) {
       throw StateError('skillRunner not wired (step.id=${step.id})');
@@ -283,13 +310,16 @@ class FlowDefinitionWorkflow
     if (skillId == null || skillId.isEmpty) {
       throw FormatException('step.config.skillId required');
     }
-    final inputs = (step.config['inputs'] as Map?)?.cast<String, dynamic>() ??
-        const <String, dynamic>{};
+    final inputs = await _renderMap(
+        (step.config['inputs'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+        state);
     final result = await fn(skillId, inputs);
     return <String, dynamic>{'result': result};
   }
 
-  Future<Map<String, dynamic>> _execLlm(mb.FlowStep step) async {
+  Future<Map<String, dynamic>> _execLlm(
+      mb.FlowStep step, Map<String, dynamic> state) async {
     final fn = llmComplete;
     if (fn == null) {
       throw StateError('llmComplete not wired (step.id=${step.id})');
@@ -298,11 +328,12 @@ class FlowDefinitionWorkflow
     if (prompt == null || prompt.isEmpty) {
       throw FormatException('step.config.prompt required');
     }
-    final result = await fn(prompt);
+    final result = await fn(await _renderText(prompt, state));
     return <String, dynamic>{'result': result};
   }
 
-  Future<Map<String, dynamic>> _execFlow(mb.FlowStep step) async {
+  Future<Map<String, dynamic>> _execFlow(
+      mb.FlowStep step, Map<String, dynamic> state) async {
     final fn = subFlowRunner;
     if (fn == null) {
       throw StateError('subFlowRunner not wired (step.id=${step.id})');
@@ -311,8 +342,10 @@ class FlowDefinitionWorkflow
     if (flowId == null || flowId.isEmpty) {
       throw FormatException('step.config.flowId required');
     }
-    final input = (step.config['input'] as Map?)?.cast<String, dynamic>() ??
-        const <String, dynamic>{};
+    final input = await _renderMap(
+        (step.config['input'] as Map?)?.cast<String, dynamic>() ??
+            const <String, dynamic>{},
+        state);
     final result = await fn(flowId, input);
     return result;
   }
@@ -566,6 +599,56 @@ class FlowDefinitionWorkflow
       }
     }
     return depth == 0;
+  }
+
+  /// Renders the `${...}` of a step's structured configuration (arguments,
+  /// inputs) from the results of the steps before it — the same rules and the
+  /// same evaluator the behavior engine uses (bundle spec 11 §11.7): a string
+  /// that is one expression keeps its type, any other is text, `\$` is a
+  /// literal dollar sign, and an expression that fails renders as nothing.
+  Future<Map<String, dynamic>> _renderMap(
+    Map<String, dynamic> raw,
+    Map<String, dynamic> state,
+  ) async {
+    final view = _viewOf(state) as Map<String, dynamic>;
+    final rendered = await mb.renderInterpolatedValue(
+        raw, (expression) => _guard.evaluate(expression, view));
+    return Map<String, dynamic>.from(rendered as Map);
+  }
+
+  /// A text field (a prompt) is always text.
+  Future<String> _renderText(String raw, Map<String, dynamic> state) {
+    final view = _viewOf(state) as Map<String, dynamic>;
+    return mb.renderInterpolation(
+        raw, (expression) => _guard.evaluate(expression, view));
+  }
+
+  static const fb.GuardEvaluator _guard = fb.GuardEvaluator();
+
+  /// The state as an expression sees it: a tool's result arrives as an
+  /// envelope whose text is JSON, and a path through it reads that JSON.
+  Object? _viewOf(Object? v) {
+    if (v is KernelToolResult) {
+      final texts = [
+        for (final c in v.content)
+          if (c is KernelTextContent) c.text,
+      ];
+      if (texts.length == 1) {
+        try {
+          return jsonDecode(texts.single);
+        } on FormatException {
+          return texts.single;
+        }
+      }
+      return texts;
+    }
+    if (v is Map) {
+      return <String, dynamic>{
+        for (final e in v.entries) '${e.key}': _viewOf(e.value),
+      };
+    }
+    if (v is List) return [for (final e in v) _viewOf(e)];
+    return v;
   }
 
   dynamic _resolveValue(String token, Map<String, dynamic> state) {

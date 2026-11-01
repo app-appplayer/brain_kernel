@@ -29,6 +29,9 @@ class FlowBrainWiring {
     this.factGraph,
     this.hostTools,
     this.sampling,
+    this.agentContext,
+    this.agentOutputs,
+    this.philosophyEvolution = false,
   });
 
   /// Workspace identifier — typically `'knowledge_builder'` or a
@@ -55,6 +58,17 @@ class FlowBrainWiring {
   /// How a skill's `tool` steps reach the host's own tools. Null keeps the
   /// stub port (every call answers with a made-up result).
   final KernelHostToolInvoker? hostTools;
+
+  /// What an agent reads from the host's knowledge store when it takes a
+  /// request, and where its outputs are put down (platform spec 30 §5.1).
+  /// Null keeps agents as they were.
+  final fb.AgentContextPort? agentContext;
+  final fb.AgentOutputPort? agentOutputs;
+
+  /// Whether each review's feedback is kept and may lead to an evolution
+  /// proposal (applied only by a person, platform spec 12 §4). False keeps
+  /// the stock behavior, where `proposeFeedback` answers null.
+  final bool philosophyEvolution;
 
   /// The connected client's model, used by a skill's `llm` step when the host
   /// has no provider of its own. Null keeps the previous choice.
@@ -90,6 +104,8 @@ class FlowBrainWiring {
         ethosStore: ethosStore,
       ),
       llmProviders: llmProviders,
+      agentContext: agentContext,
+      agentOutputs: agentOutputs,
     );
 
     // L1 SkillRuntime — memory-backed registry with stub LlmPort /
@@ -168,9 +184,11 @@ class FlowBrainWiring {
         );
 
     _system = fb.KnowledgeSystem.withAgents(
-      // Evolution proposals on: the stock config drops every review's
-      // feedback (platform spec 12 §4). They are applied only by a person.
-      config: fb.KnowledgeConfig.withPhilosophyEvolution,
+      // Evolution proposals are the host's choice: the stock config drops
+      // every review's feedback (platform spec 12 §4).
+      config: philosophyEvolution
+          ? fb.KnowledgeConfig.withPhilosophyEvolution
+          : fb.KnowledgeConfig.defaults,
       infraPorts: infra,
       llm: fallbackLlm ??
           (llmProviders.isNotEmpty ? llmProviders.values.first : null),

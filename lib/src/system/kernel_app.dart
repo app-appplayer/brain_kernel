@@ -185,6 +185,9 @@ class KernelApp {
     SkillScopeChain? skillScopeChain,
     SoftViolationConfirm? confirmSoftViolation,
     KernelSampling? sampling,
+    fb.AgentContextPort? agentContext,
+    fb.AgentOutputPort? agentOutputs,
+    bool philosophyEvolution = false,
     String? bundleRegistryStorageDir,
     String chatLogDir = '.',
     ConfigPort config = NullConfig.instance,
@@ -204,6 +207,9 @@ class KernelApp {
       factGraph: factGraph,
       hostTools: hostTools,
       sampling: sampling,
+      agentContext: agentContext,
+      agentOutputs: agentOutputs,
+      philosophyEvolution: philosophyEvolution,
     );
     await wiring.boot();
     // No directory (a browser host): the list lives in memory and the

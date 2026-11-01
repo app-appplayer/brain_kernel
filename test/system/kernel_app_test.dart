@@ -3,6 +3,8 @@
 library;
 
 import 'package:brain_kernel/brain_kernel.dart';
+import 'package:mcp_bundle/mcp_bundle.dart' as mb;
+import 'package:brain_kernel/mcp_host.dart' show ServerBootstrap;
 import 'package:test/test.dart';
 
 void main() {
@@ -135,6 +137,26 @@ void main() {
       expect(app.endpoint('app_builder'), same(b));
       expect(app.endpoints.length, 2);
       await app.shutdown();
+    });
+
+    test('two bundles can be activated on one endpoint; the newest bundle '
+        'is the document it serves', () async {
+      // The MCP backed host is the one that refuses a resource twice.
+      final app = await KernelApp.boot(
+        workspaceId: 't',
+        kvStorage: InMemoryKvStoragePort(),
+        serverHostFactory: ServerBootstrap.factory,
+      );
+      addTearDown(app.shutdown);
+      final ep = app.addEndpoint(label: 'multi');
+      mb.McpBundle bundle(String id) => mb.McpBundle(
+            manifest: mb.BundleManifest(id: id, name: id, version: '1'),
+          );
+      final first = await ep.activate(bundle('one'));
+      final second = await ep.activate(bundle('two'));
+      expect(first.errors, isEmpty);
+      expect(second.errors, isEmpty);
+      expect(ep.ownedBundleIds, ['one', 'two']);
     });
 
     test('addEndpoint idempotent on duplicate label', () async {

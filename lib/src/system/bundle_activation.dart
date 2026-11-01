@@ -37,6 +37,7 @@ library;
 import 'dart:convert';
 
 import 'package:flowbrain_core/flowbrain_core.dart' as fb;
+import 'package:flowbrain_core/flowbrain_core.dart' show FlowStepRef;
 import 'package:mcp_bundle/mcp_bundle.dart' as mb;
 import 'package:mcp_knowledge_ops/mcp_knowledge_ops.dart' as ops;
 import 'package:mcp_skill/mcp_skill.dart' as ms;
@@ -431,10 +432,22 @@ class BundleActivation {
     // One shared store per registered behavior so run + resume across
     // separate tool calls see the same suspended run.
     final store = behaviorStore ?? ops.EphemeralStateStore();
-    opsRuntime.behaviorRegistry[exposedId] = () => ops.BehaviorRunnable(
+    opsRuntime.behaviorRegistry[exposedId] = () => _FlowAwareRunnable(
+          exposedId,
           ops.BehaviorEngine(
             store: store,
             dispatch: (action, state) async {
+              // The engine says which step this is; it goes on the flow
+              // reference.
+              final stepId = action.stepId;
+              final base = FlowStepRef.current;
+              return FlowStepRef.run(
+                  FlowStepRef(
+                    kind: 'behavior',
+                    flowId: exposedId,
+                    runId: base?.runId,
+                    stepId: stepId,
+                  ), () async {
               if (action.kind == 'skill') {
                 final dynamic r =
                     await system.skill.execute(action.ref, action.args);
@@ -449,6 +462,7 @@ class BundleActivation {
               }
               final r = await invoke(action.ref, action.args);
               return _behaviorToolOutput(r);
+              });
             },
           ),
           steps,
@@ -596,4 +610,27 @@ class BundleActivationRegistry {
     }
     return null;
   }
+}
+
+/// A behavior run that knows which flow and run it is, so what an agent
+/// produces inside it can say where it came from (spec 12 §0.5).
+class _FlowAwareRunnable extends ops.BehaviorRunnable {
+  _FlowAwareRunnable(this.flowId, super.engine, super.steps);
+
+  final String flowId;
+
+  @override
+  Future<ops.EngineResult> run(String runId, Map<String, dynamic> input) =>
+      FlowStepRef.run(
+        FlowStepRef(kind: 'behavior', flowId: flowId, runId: runId),
+        () => super.run(runId, input),
+      );
+
+  @override
+  Future<ops.EngineResult> resume(String runId,
+          {Map<String, dynamic>? statePatch}) =>
+      FlowStepRef.run(
+        FlowStepRef(kind: 'behavior', flowId: flowId, runId: runId),
+        () => super.resume(runId, statePatch: statePatch),
+      );
 }

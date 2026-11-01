@@ -12,12 +12,12 @@ import 'package:mcp_knowledge_ops/mcp_knowledge_ops.dart' as fb;
 import 'package:test/test.dart';
 
 fb.WorkflowContext _ctx() => fb.WorkflowContext(
-      runId: 't',
-      workspaceId: 'ws',
-      userId: 'user',
-      asOf: DateTime.fromMillisecondsSinceEpoch(0),
-      config: const fb.WorkflowConfig(),
-    );
+  runId: 't',
+  workspaceId: 'ws',
+  userId: 'user',
+  asOf: DateTime.fromMillisecondsSinceEpoch(0),
+  config: const fb.WorkflowConfig(),
+);
 
 void main() {
   group('FlowDefinitionWorkflow — _evalCondition parentheses', () {
@@ -70,8 +70,7 @@ void main() {
       expect(stepRan(r), isFalse);
     });
 
-    test('precedence: (a || b) && c — a true makes whole truthy',
-        () async {
+    test('precedence: (a || b) && c — a true makes whole truthy', () async {
       final r = await runWith(
         condition: '(a == 1 || a == 2) && c == 3',
         input: <String, dynamic>{'a': 1, 'c': 3},
@@ -79,8 +78,7 @@ void main() {
       expect(stepRan(r), isTrue);
     });
 
-    test('precedence: (a || b) && c — c false makes whole falsy',
-        () async {
+    test('precedence: (a || b) && c — c false makes whole falsy', () async {
       final r = await runWith(
         condition: '(a == 1 || a == 2) && c == 3',
         input: <String, dynamic>{'a': 1, 'c': 99},
@@ -108,24 +106,15 @@ void main() {
   });
 
   group('FlowDefinitionWorkflow — step.next[] graph traversal', () {
-    test('linear flow (no next[]) runs steps in declaration order',
-        () async {
+    test('linear flow (no next[]) runs steps in declaration order', () async {
       final wf = FlowDefinitionWorkflow(
         mb.FlowDefinition(
           id: 'linear',
           name: 'linear',
           trigger: const mb.FlowTrigger(type: mb.TriggerType.manual),
           steps: <mb.FlowStep>[
-            mb.FlowStep(
-              id: 'a',
-              type: mb.StepType.action,
-              condition: 'true',
-            ),
-            mb.FlowStep(
-              id: 'b',
-              type: mb.StepType.action,
-              condition: 'true',
-            ),
+            mb.FlowStep(id: 'a', type: mb.StepType.action, condition: 'true'),
+            mb.FlowStep(id: 'b', type: mb.StepType.action, condition: 'true'),
           ],
         ),
       );
@@ -196,6 +185,96 @@ void main() {
       final r = await wf.run(const <String, dynamic>{}, _ctx());
       final ids = r.stages.map((s) => s.stageId).toList();
       expect(ids, equals(<String>['a', 'b']));
+    });
+  });
+
+  group('FlowDefinitionWorkflow — step references', () {
+    final calls = <Map<String, dynamic>>[];
+
+    FlowDefinitionWorkflow build(List<mb.FlowStep> steps) =>
+        FlowDefinitionWorkflow(
+          mb.FlowDefinition(
+            id: 'refs',
+            name: 'refs',
+            trigger: const mb.FlowTrigger(type: mb.TriggerType.manual),
+            steps: steps,
+          ),
+          toolDispatcher: (tool, args) async {
+            calls.add(<String, dynamic>{'tool': tool, ...args});
+            if (tool == 'first') {
+              return KernelToolResult(
+                content: [
+                  const KernelTextContent(
+                    text:
+                        '{"ok":true,"content":"hello","n":3,"items":["x","y"]}',
+                  ),
+                ],
+              );
+            }
+            return KernelToolResult(
+              content: [const KernelTextContent(text: '{"ok":true}')],
+            );
+          },
+        );
+
+    mb.FlowStep tool(String id, String name, Map<String, dynamic> args) =>
+        mb.FlowStep(
+          id: id,
+          type: mb.StepType.action,
+          config: <String, dynamic>{'tool': name, 'args': args},
+        );
+
+    setUp(calls.clear);
+
+    test('a later step receives the earlier tool\'s result, by the rules the '
+        'behavior engine uses (bundle spec 11 §11.7)', () async {
+      final wf = build([
+        tool('a', 'first', const {}),
+        tool('b', 'second', const {
+          'text': r'${a.result.content}',
+          'number': r'${a.result.n}',
+          'inline': r'said ${a.result.content} twice',
+          'dollar': r'\$1.00 and ${a.result.n}',
+        }),
+      ]);
+      final r = await wf.run(const <String, dynamic>{}, _ctx());
+      expect(r.success, isTrue);
+      final second = calls.last;
+      expect(second['text'], 'hello');
+      expect(second['number'], 3, reason: 'a lone expression keeps its type');
+      expect(second['inline'], 'said hello twice');
+      expect(second['dollar'], r'$1.00 and 3');
+    });
+
+    test('an expression with no value renders as nothing and the step still '
+        'runs, as it does in the behavior engine', () async {
+      final wf = build([
+        tool('a', 'first', const {}),
+        tool('b', 'second', const {
+          'text': r'${a.result.missing}',
+          'inline': r'x${a.result.missing}y',
+        }),
+      ]);
+      final r = await wf.run(const <String, dynamic>{}, _ctx());
+      expect(r.success, isTrue);
+      expect(calls.last['text'], anyOf(isNull, ''));
+      expect(calls.last['inline'], 'xy');
+    });
+
+    test('the workflow input is readable too', () async {
+      final wf = build([
+        tool('a', 'second', const {'t': r'${topic}'}),
+      ]);
+      await wf.run(const <String, dynamic>{'topic': 'launch'}, _ctx());
+      expect(calls.single['t'], 'launch');
+    });
+
+    test('text without a reference is untouched', () async {
+      final wf = build([
+        tool('a', 'first', const {'q': 'plain text'}),
+      ]);
+      await wf.run(const <String, dynamic>{}, _ctx());
+      expect(calls.single['q'], 'plain text');
     });
   });
 }

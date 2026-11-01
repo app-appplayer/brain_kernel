@@ -105,8 +105,15 @@ class KernelEndpoint {
   /// endpoint's server. Wraps the in-process handler so the raw JSON
   /// return value becomes a [KernelToolResult]. The host can override
   /// individual tools afterwards via [addTool] / [removeTool].
+  ///
+  /// With [wrap] a host puts each tool behind something of its own — who is
+  /// calling, what that caller may do — by returning the handler to register
+  /// in place of the standard one. Left null the tools are registered as
+  /// they are.
   void addStandardTools(KernelApp app, {
     ToolScope scope = ToolScope.external,
+    InProcessToolHandler Function(String name, InProcessToolHandler standard)?
+        wrap,
   }) {
     for (final entry in standardTools(app).entries) {
       server.addTool(
@@ -116,7 +123,9 @@ class KernelEndpoint {
           'type': 'object',
           'additionalProperties': true,
         },
-        handler: wrapInProcess(entry.value),
+        handler: wrapInProcess(
+          wrap == null ? entry.value : wrap(entry.key, entry.value),
+        ),
         scope: scope,
       );
     }
@@ -155,6 +164,9 @@ class KernelEndpoint {
     // single-bundle endpoint serves its own document; on a multi-bundle
     // endpoint the most recently activated bundle's document is exposed,
     // matching `bundle://`'s "currently loaded bundle" semantics.
+    // A second bundle replaces the first one's document: the resource is
+    // there once, and the newest bundle is the one it shows.
+    removeResource('bundle://manifest.json');
     addResource(
       uri: 'bundle://manifest.json',
       name: bundle.manifest.name,

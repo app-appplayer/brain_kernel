@@ -87,6 +87,47 @@ void main() {
       await app.shutdown();
     });
 
+    test('a host can put every standard tool behind a handler of its own',
+        () async {
+      final app = await KernelApp.boot(
+        workspaceId: 't',
+        kvStorage: InMemoryKvStoragePort(),
+      );
+      final ep = app.addEndpoint(label: 'main');
+      final seen = <String>[];
+      ep.addStandardTools(
+        app,
+        wrap: (name, standard) => (args) async {
+          seen.add(name);
+          if (name == 'bk.agent.list') {
+            return <String, dynamic>{'ok': false, 'error': 'refused here'};
+          }
+          return standard(args);
+        },
+      );
+      expect(ep.server.toolScopes.length, 48,
+          reason: 'the same tools, only behind the host\'s handler');
+
+      final refused = await ep.server.callTool('bk.agent.list', const {});
+      expect(refused.isError, isTrue);
+      final passed = await ep.server.callTool('bk.profile.list', const {});
+      expect(passed.isError, isFalse);
+      expect(seen, ['bk.agent.list', 'bk.profile.list']);
+      await app.shutdown();
+    });
+
+    test('without a wrap the tools are registered as before', () async {
+      final app = await KernelApp.boot(
+        workspaceId: 't',
+        kvStorage: InMemoryKvStoragePort(),
+      );
+      final ep = app.addEndpoint(label: 'main');
+      ep.addStandardTools(app);
+      final r = await ep.server.callTool('bk.profile.list', const {});
+      expect(r.isError, isFalse);
+      await app.shutdown();
+    });
+
     test('a representative wrapper dispatches via the endpoint server',
         () async {
       final app = await KernelApp.boot(

@@ -1,3 +1,26 @@
+## [0.3.2] - 2026-11-01
+
+### Added
+
+- `KernelApp.boot(agentContext:, agentOutputs:)` — the agent ports of `flowbrain_core` 0.1.10. A host hands agents what it recorded before a request and takes what they produce; without them agents behave as before.
+- `KernelApp.boot(philosophyEvolution:)` — philosophy evolution is the host's choice and stays off unless asked for (0.3.1 switched it on for every host).
+- `LlmPortAdapter(defaultMaxTokens:, onUsage:)` — a token limit sent only when set (a request's own limit wins), and a callback with the provider's usage. A call result carries `finishReason` and `usage`; a model that refuses `temperature` is retried once without it and remembered.
+- `KernelEndpoint.addStandardTools(wrap:)` — a host can put the standard tools behind its own handler (identity checks, workspace routing). Without `wrap` nothing changes.
+- A behavior step's run is recorded with the flow step it came from (`FlowStepRef`), taken from `BehaviorAction.stepId`.
+
+### Changed
+
+- A workflow tool step's `${}` arguments are rendered by the shared renderer of the bundle spec (11 §11.7).
+- Floors: `flowbrain_core` `^0.1.10`, `mcp_bundle` `^0.4.13`, `mcp_llm` `^3.0.1`, `mcp_knowledge_ops` `^0.3.2`.
+
+### Fixed
+
+- The `bundle://manifest.json` resource was registered twice on activation.
+
+### Backward compatibility
+
+- Additive. `dart-apitool` against 0.3.1: no breaking changes. Philosophy evolution is off by default again, as in 0.3.0.
+
 ## [0.3.1] - 2026-10-31
 
 ### Added

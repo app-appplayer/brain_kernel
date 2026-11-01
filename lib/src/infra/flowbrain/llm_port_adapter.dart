@@ -36,6 +36,8 @@ class LlmPortAdapter extends mb.LlmPort {
     required this.apiKey,
     this.endpoint,
     String providerName = 'anthropic',
+    this.onUsage,
+    this.defaultMaxTokens,
   })  : _externalProvider = null,
         _providerName = providerName;
 
@@ -56,10 +58,23 @@ class LlmPortAdapter extends mb.LlmPort {
     required this.modelId,
     required mll.LlmProvider provider,
     String providerName = 'external',
+    this.onUsage,
+    this.defaultMaxTokens,
   })  : apiKey = '',
         endpoint = null,
         _externalProvider = provider,
         _providerName = providerName;
+
+  /// Told the token counts of every call the provider reported them for
+  /// (provider name, input, output) — a host meters cost from it.
+  final void Function(String provider, int inputTokens, int outputTokens)?
+      onUsage;
+
+  /// Output limit sent when the request names none. Null leaves the choice to
+  /// the provider, as before; a host that asks for long structured replies
+  /// sets a roomier one (the provider's own default can cut such a reply to
+  /// nothing).
+  final int? defaultMaxTokens;
 
   /// Provider model id — matches `ModelSpec.id` on the agent profile.
   final String modelId;
@@ -135,8 +150,10 @@ class LlmPortAdapter extends mb.LlmPort {
     }
     final params = <String, dynamic>{
       if (req.systemPrompt != null) 'system': req.systemPrompt,
-      if (req.maxTokens != null) 'max_tokens': req.maxTokens,
-      if (req.temperature != null) 'temperature': req.temperature,
+      if ((req.maxTokens ?? defaultMaxTokens) != null)
+        'max_tokens': req.maxTokens ?? defaultMaxTokens,
+      if (req.temperature != null && _sendTemperature)
+        'temperature': req.temperature,
       if (req.tools != null && req.tools!.isNotEmpty)
         'tools': <Map<String, dynamic>>[
           for (final t in req.tools!)
@@ -160,8 +177,19 @@ class LlmPortAdapter extends mb.LlmPort {
   /// same shape).
   mb.LlmResponse _fromMllResponse(mll.LlmResponse r) {
     final tc = r.toolCalls;
+    // The provider reports why it stopped in its metadata; callers that
+    // check for a reply cut off at the limit read it from `finishReason`.
+    final stop = r.metadata['finish_reason'] ?? r.metadata['stop_reason'];
+    final input = r.metadata['input_tokens'];
+    final output = r.metadata['output_tokens'];
+    final usage = input is int && output is int
+        ? mb.LlmUsage(inputTokens: input, outputTokens: output)
+        : null;
+    if (usage != null) onUsage?.call(_providerName, input as int, output as int);
     return mb.LlmResponse(
       content: r.text,
+      finishReason: stop is String ? stop : null,
+      usage: usage,
       metadata: r.metadata,
       toolCalls: tc == null
           ? null
@@ -176,12 +204,27 @@ class LlmPortAdapter extends mb.LlmPort {
     );
   }
 
+  /// False once the model has refused `temperature`; later calls omit it.
+  bool _sendTemperature = true;
+
   @override
   Future<mb.LlmResponse> complete(mb.LlmRequest request) async {
     final provider = await _ensureProvider();
-    final mllRequest = _toMllRequest(request);
-    final mllResponse = await provider.complete(mllRequest);
-    return _fromMllResponse(mllResponse);
+    try {
+      return _fromMllResponse(
+          await provider.complete(_toMllRequest(request)));
+    } catch (e) {
+      // Newer models reject `temperature` outright; the same call without it
+      // is valid, so retry once rather than fail the caller.
+      if (!_sendTemperature ||
+          request.temperature == null ||
+          !e.toString().contains('`temperature` is deprecated')) {
+        rethrow;
+      }
+      _sendTemperature = false;
+      return _fromMllResponse(
+          await provider.complete(_toMllRequest(request)));
+    }
   }
 
   @override
