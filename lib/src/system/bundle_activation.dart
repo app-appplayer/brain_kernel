@@ -505,13 +505,25 @@ class BundleActivation {
 /// content as JSON and, if it is a map, merge its keys so a later step's
 /// `when` guard can read them (e.g. `hasHardViolation` from
 /// `bk.philosophy.check`). Non-JSON / non-map results park under `result`.
+/// A step's tool answer as state. A tool that answers it did not do the
+/// thing (`ok: false`) failed the step: the run fails, or goes where the
+/// step's `onFailure` points — a refusal is not a result to build on
+/// (platform spec 31 §2.4 `run.failed`).
 Map<String, dynamic> _behaviorToolOutput(KernelToolResult r) {
   for (final c in r.content) {
     if (c is KernelTextContent) {
       try {
         final decoded = jsonDecode(c.text);
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      } catch (_) {/* not JSON — fall through */}
+        if (decoded is Map) {
+          if (decoded['ok'] == false) {
+            throw StateError(
+                '${decoded['error'] ?? decoded['code'] ?? 'the tool refused'}');
+          }
+          return Map<String, dynamic>.from(decoded);
+        }
+      } on FormatException {
+        // Not JSON: the text is the result.
+      }
     }
   }
   return <String, dynamic>{'result': r};

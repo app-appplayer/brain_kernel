@@ -24,6 +24,7 @@ import 'host/kernel_envelope.dart';
 import 'host/kernel_server_host.dart';
 import 'kernel_app.dart';
 import 'standard_tools/standard_tools.dart';
+import 'standard_tools/tool_specs.dart';
 
 class KernelEndpoint {
   /// Construction is internal — hosts use [KernelApp.addEndpoint].
@@ -116,13 +117,15 @@ class KernelEndpoint {
         wrap,
   }) {
     for (final entry in standardTools(app).entries) {
+      final spec = standardToolSpecs[entry.key];
       server.addTool(
         name: entry.key,
-        description: 'Standard kernel tool: ${entry.key}',
-        inputSchema: const <String, dynamic>{
-          'type': 'object',
-          'additionalProperties': true,
-        },
+        description: spec?.description ?? 'Standard kernel tool: ${entry.key}',
+        inputSchema: spec?.inputSchema ??
+            const <String, dynamic>{
+              'type': 'object',
+              'additionalProperties': true,
+            },
         handler: wrapInProcess(
           wrap == null ? entry.value : wrap(entry.key, entry.value),
         ),

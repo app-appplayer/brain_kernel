@@ -187,7 +187,11 @@ class KernelApp {
     KernelSampling? sampling,
     fb.AgentContextPort? agentContext,
     fb.AgentOutputPort? agentOutputs,
+    fb.AgentResponseGatePort? agentResponseGate,
     bool philosophyEvolution = false,
+    int answerRewriteRounds = 0,
+    Duration? answerRewriteBudget,
+    Set<String>? answerRewriteStatuses,
     String? bundleRegistryStorageDir,
     String chatLogDir = '.',
     ConfigPort config = NullConfig.instance,
@@ -209,7 +213,11 @@ class KernelApp {
       sampling: sampling,
       agentContext: agentContext,
       agentOutputs: agentOutputs,
+      agentResponseGate: agentResponseGate,
       philosophyEvolution: philosophyEvolution,
+      answerRewriteRounds: answerRewriteRounds,
+      answerRewriteBudget: answerRewriteBudget,
+      answerRewriteStatuses: answerRewriteStatuses,
     );
     await wiring.boot();
     // No directory (a browser host): the list lives in memory and the

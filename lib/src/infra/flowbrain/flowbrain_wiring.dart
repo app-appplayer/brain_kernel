@@ -31,8 +31,23 @@ class FlowBrainWiring {
     this.sampling,
     this.agentContext,
     this.agentOutputs,
+    this.agentResponseGate,
     this.philosophyEvolution = false,
+    this.answerRewriteRounds = 0,
+    this.answerRewriteBudget,
+    this.answerRewriteStatuses,
   });
+
+  /// How many times a marked answer goes back to the agent to be said again
+  /// on the facts (platform spec 30 §5.1); 0 never.
+  final int answerRewriteRounds;
+
+  /// Which marked sentences go back (the check's status names); null keeps
+  /// the agent default (contradicted ones).
+  final Set<String>? answerRewriteStatuses;
+
+  /// The time those rounds may take in all; null is no limit.
+  final Duration? answerRewriteBudget;
 
   /// Workspace identifier — typically `'knowledge_builder'` or a
   /// per-build scratch id. Surfaced to the agent registry if any
@@ -64,6 +79,10 @@ class FlowBrainWiring {
   /// Null keeps agents as they were.
   final fb.AgentContextPort? agentContext;
   final fb.AgentOutputPort? agentOutputs;
+
+  /// The check of an answer against the host's knowledge, made before the
+  /// answer is delivered. Null keeps agents as they were.
+  final fb.AgentResponseGatePort? agentResponseGate;
 
   /// Whether each review's feedback is kept and may lead to an evolution
   /// proposal (applied only by a person, platform spec 12 §4). False keeps
@@ -106,6 +125,7 @@ class FlowBrainWiring {
       llmProviders: llmProviders,
       agentContext: agentContext,
       agentOutputs: agentOutputs,
+      agentResponseGate: agentResponseGate,
     );
 
     // L1 SkillRuntime — memory-backed registry with stub LlmPort /
@@ -186,9 +206,16 @@ class FlowBrainWiring {
     _system = fb.KnowledgeSystem.withAgents(
       // Evolution proposals are the host's choice: the stock config drops
       // every review's feedback (platform spec 12 §4).
-      config: philosophyEvolution
-          ? fb.KnowledgeConfig.withPhilosophyEvolution
-          : fb.KnowledgeConfig.defaults,
+      config: (philosophyEvolution
+              ? fb.KnowledgeConfig.withPhilosophyEvolution
+              : fb.KnowledgeConfig.defaults)
+          .copyWith(
+        agent: fb.AgentConfig.defaults.copyWith(
+          answerRewriteRounds: answerRewriteRounds,
+          answerRewriteBudget: answerRewriteBudget,
+          answerRewriteStatuses: answerRewriteStatuses,
+        ),
+      ),
       infraPorts: infra,
       llm: fallbackLlm ??
           (llmProviders.isNotEmpty ? llmProviders.values.first : null),

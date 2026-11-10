@@ -1,3 +1,22 @@
+## [0.4.0] - 2026-11-10
+
+### Breaking
+
+- Floors: `flowbrain_core` `^0.2.0`, `mcp_knowledge_ops` `^0.4.0`, `mcp_bundle` `^0.4.14`, `mcp_llm` `^3.0.3`. The re-exported `flowbrain_core` carries the behaviour of `mcp_knowledge` 0.3.0, `mcp_knowledge_ops` 0.4.0 and `mcp_fact_graph` 0.3.0 (see the `flowbrain_core` 0.2.0 entry).
+- `bk.agent.create` refuses a `role` that is not one of the roles (it created a worker). A missing `role` is still a worker.
+- `bk.agent.materialize` refuses an `axis` that is not one of the axes (it materialised the skill axis).
+- A behavior step whose tool answers `ok: false` fails the step: the run fails, or goes where the step's `onFailure` points (the refusal was taken as the step's result).
+
+### Added
+
+- `KernelApp.boot(agentResponseGate:, answerRewriteRounds:, answerRewriteBudget:, answerRewriteStatuses:)` — the answer check and rewrite rounds of `flowbrain_core` 0.2.0. Without them agents behave as before.
+- Every standard tool is listed with what it does and the arguments it takes (`inputSchema` with types and required arguments; extra arguments are still accepted). A model that calls a tool reads this listing.
+- `bk.agent.route` and `bk.agent.review` answer `decidedBy` (`engine` or `model`); a review also answers `engineCheck` when the answer check made one.
+
+### Backward compatibility
+
+- Breaking as listed. Calls without the arguments a tool now lists as required were refused before as well; counts (`limit`, `topK`) are listed as numbers, as the tools read them.
+
 ## [0.3.2] - 2026-11-01
 
 ### Added

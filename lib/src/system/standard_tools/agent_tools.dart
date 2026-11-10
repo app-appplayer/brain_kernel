@@ -79,10 +79,15 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     final displayName = p['displayName'];
     if (displayName is! String) return stdErr('displayName required');
     final roleName = p['role'] as String?;
-    final role = fb.AgentRole.values.firstWhere(
-      (r) => r.name == roleName,
-      orElse: () => fb.AgentRole.worker,
-    );
+    // A role left out is a worker; one that is given must be one of the roles
+    // (the same rule as `update`).
+    var role = fb.AgentRole.worker;
+    if (roleName != null) {
+      final named =
+          fb.AgentRole.values.where((r) => r.name == roleName).firstOrNull;
+      if (named == null) return stdErr('unknown role: $roleName');
+      role = named;
+    }
     final modelRaw = p['model'] as Map?;
     final model = modelRaw != null
         ? fb.ModelSpec(
@@ -249,10 +254,9 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
     if (agentId is! String || axisName is! String || forkedRef is! String) {
       return stdErr('agentId + axis + forkedRef required');
     }
-    final axis = fb.AgentAxis.values.firstWhere(
-      (a) => a.name == axisName,
-      orElse: () => fb.AgentAxis.skill,
-    );
+    final axis =
+        fb.AgentAxis.values.where((a) => a.name == axisName).firstOrNull;
+    if (axis == null) return stdErr('unknown axis: $axisName');
     try {
       await facade().materialize(app.scopeIdFor(agentId), axis, forkedRef);
       return <String, dynamic>{'ok': true};
@@ -284,6 +288,7 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
         'targetAgentId': d.targetAgentId,
         'confidence': d.confidence,
         if (d.reason != null) 'reason': d.reason,
+        'decidedBy': d.decidedBy,
       };
     } catch (e) {
       return stdErr('route failed: $e');
@@ -315,6 +320,10 @@ Map<String, InProcessToolHandler> buildAgentTools(KernelApp app) {
         'verdict': r.verdict.name,
         if (r.severity != null) 'severity': r.severity!.name,
         if (r.comments != null) 'comments': r.comments,
+        // Who settled it — the deterministic check against the recorded
+        // facts, or the model (platform spec 30 §5.1).
+        'decidedBy': r.decidedBy,
+        if (r.engineCheck != null) 'engineCheck': r.engineCheck,
       };
     } catch (e) {
       return stdErr('review failed: $e');

@@ -16,12 +16,15 @@ void main() {
         workspaceId: 'ws', kvStorage: kv, philosophyEvolution: true);
     final engine = first.system.philosophyEngine!;
     final ethos = await first.system.philosophy.getEthos();
+    // A value with room to rise: the top one cannot move up, and a move that
+    // cannot be made is not proposed.
+    expect(ethos.valuePriorities.length, greaterThan(1));
     for (var i = 0; i < 4; i++) {
       await first.system.philosophy.proposeFeedback(mb.FeedbackEvent(
         id: 'fb-$i',
         actionId: 'review:agent-1',
         ethosId: ethos.id,
-        valuePriorityId: ethos.valuePriorities.first.id,
+        valuePriorityId: ethos.valuePriorities.last.id,
         outcome: mb.FeedbackOutcome.positive,
         outcomeScore: 1.0,
         outcomeDescription: 'reviewer verdict: pass',

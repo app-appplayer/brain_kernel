@@ -127,6 +127,41 @@ void main() {
     expect(calls.single.$2, {'x': 1});
   });
 
+  test('a tool that answers it did not do the thing fails the step, and the '
+      'run with it', () async {
+    final wiring = await _bootWiring();
+    final activation = BundleActivation(
+      system: wiring.system,
+      bundleId: 'b',
+      callTool: (tool, args) async => KernelToolResult(
+        content: const [
+          KernelTextContent(text: '{"ok":false,"error":"unauthenticated: missing"}')
+        ],
+      ),
+    );
+    final bundle = mb.McpBundle(
+      manifest: mb.BundleManifest(id: 'b', name: 'b', version: '1.0.0'),
+      behavior: mb.BehaviorSection(definitions: <mb.BehaviorDefinition>[
+        mb.BehaviorDefinition(
+          id: 'invoke',
+          name: 'Invoke a tool',
+          steps: <mb.BehaviorStepDef>[
+            const mb.BehaviorStepDef(
+              id: 'call',
+              action: {'tool': 'my.tool'},
+            ),
+            const mb.BehaviorStepDef(id: 'done'),
+          ],
+        ),
+      ]),
+    );
+    await activation.activate(bundle);
+    final runtime = wiring.system.opsRuntime as ko.OpsRuntime;
+    final run = await runtime.behaviorRegistry['b.invoke']!().run('run1', {});
+    expect(run.isFailed, isTrue, reason: 'a refusal is not a result');
+    expect(run.error, contains('unauthenticated: missing'));
+  });
+
   test('tool-action without boot or callTool throws "not wired"', () async {
     final wiring = await _bootWiring();
     final activation = BundleActivation(system: wiring.system, bundleId: 'b');
